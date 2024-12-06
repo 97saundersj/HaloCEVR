@@ -167,6 +167,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		SendInput(1, &input, sizeof(INPUT));
 	}
 
+	bool isHandOverGrip = weaponHandler.IsHandOverGrip();
 	bool bGripChanged;
 	bool bIsGripping = vr->GetBoolInput(TwoHandGrip, bGripChanged);
 
@@ -179,8 +180,9 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 
 		bIsGripping = bWasGripping;
 	}
-
-	Game::instance.bUseTwoHandAim = bIsGripping;
+	
+	Logger::log << "bIsGripping: " << bIsGripping << ", isHandOverGrip: " << isHandOverGrip << std::endl;
+	Game::instance.bUseTwoHandAim = bIsGripping && isHandOverGrip;
 
 	Vector2 MoveInput = vr->GetVector2Input(Move);
 

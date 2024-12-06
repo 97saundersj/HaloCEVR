@@ -6,6 +6,9 @@
 #include "Logger.h"
 #include "Game.h"
 
+Transform WeaponHandler::leftWristTransform;
+Transform WeaponHandler::rightWristTransform;
+
 // This is a working decomp of the game's original logic for updating the view model's skeleton
 // Only kept here for reference when working on the replacement function below
 static void ReferenceUpdateViewModelImpl(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, TransformQuat* boneTransforms, Transform* outBoneTransforms)
@@ -159,6 +162,20 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 			}
 			else if (boneIndex == cachedViewModel.rightWristIndex)
 			{
+				/*
+				ControllerRole controller = Game::instance.c_LeftHanded->Value() ? ControllerRole::Right : ControllerRole::Left;
+				Vector3 offHandPos = Game::instance.GetVR()->GetControllerTransform(controller, true) * Vector3(0.0f, 0.0f, 0.0f);
+
+				Vector3 boneTranslation = outBoneTransforms[boneIndex].translation;
+				float distance = (offHandPos - boneTranslation).length();
+
+				bool handOverGrip = distance < 0.1;
+				if (!handOverGrip)
+				{
+					Game::instance.bUseTwoHandAim = false;
+				}
+				*/
+
 				// This is dreadful code. Rework to be less insane
 				if (!Game::instance.bUseTwoHandAim)
 				{
@@ -203,9 +220,30 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 					MoveBoneToTransform(boneIndex, handTransform, realTransforms, outBoneTransforms);
 				}
 				CreateEndCap(boneIndex, currentBone, outBoneTransforms);
+
+				rightWristTransform = outBoneTransforms[boneIndex];
+				/*
+				Logger::log << "outBoneTransforms: " << outBoneTransforms[boneIndex].translation << std::endl;
+				Logger::log << "realTransforms: " << realTransforms[boneIndex].translation << std::endl;
+				Logger::log << "rightWristTransform.translation: " << rightWristTransform.translation << std::endl;
+				*/
 			}
 			else if (boneIndex == cachedViewModel.leftWristIndex)
 			{
+				/*
+				ControllerRole controller = Game::instance.c_LeftHanded->Value() ? ControllerRole::Right : ControllerRole::Left;
+				Vector3 offHandPos = Game::instance.GetVR()->GetControllerTransform(controller, true) * Vector3(0.0f, 0.0f, 0.0f);
+
+				Vector3 boneTranslation = outBoneTransforms[boneIndex].translation;
+				float distance = (offHandPos - boneTranslation).length();
+
+				bool handOverGrip = distance < 0.1;
+				if (!handOverGrip)
+				{
+					Game::instance.bUseTwoHandAim = false;
+				}
+				*/
+
 				if (!Game::instance.bUseTwoHandAim)
 				{
 					Matrix4 newTransform = Game::instance.GetVR()->GetControllerTransform(Game::instance.c_LeftHanded->Value() ? ControllerRole::Right : ControllerRole::Left, true);
@@ -249,6 +287,13 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 				}
 
 				CreateEndCap(boneIndex, currentBone, outBoneTransforms);
+
+				leftWristTransform = outBoneTransforms[boneIndex];
+				/*
+				Logger::log << "outBoneTransforms: " << outBoneTransforms[boneIndex].translation << std::endl;
+				Logger::log << "realTransforms: " << realTransforms[boneIndex].translation << std::endl;
+				Logger::log << "eftWristTransform.translation: " << leftWristTransform.translation << std::endl;
+				*/
 			}
 			else if (boneIndex == cachedViewModel.gunIndex)
 			{
@@ -785,6 +830,41 @@ bool WeaponHandler::GetWorldWeaponScope(Vector3& outPosition, Vector3& outAim, V
 bool WeaponHandler::IsSniperScope() const
 {
 	return cachedViewModel.scopeType == ScopedWeaponType::Sniper;
+}
+
+bool WeaponHandler::IsHandOverGrip() {
+    ControllerRole controller = Game::instance.c_LeftHanded->Value() ? ControllerRole::Right : ControllerRole::Left;
+    Vector3 offHandPos = Game::instance.GetVR()->GetControllerTransform(controller, true) * Vector3(0.0f, 0.0f, 0.0f);
+
+	Matrix4 newTransform = Game::instance.GetVR()->GetControllerTransform(Game::instance.c_LeftHanded->Value() ? ControllerRole::Right : ControllerRole::Left, false);
+	// Apply scale only to translation portion
+	Vector3 translation = rightWristTransform.translation * Vector3(0.0f, 0.0f, 0.0f);
+	newTransform.translate(-translation);
+	translation *= Game::instance.MetresToWorld(0.1f);
+	//translation += *pos;
+	newTransform.translate(translation);
+					
+    Vector3 boneTranslation = rightWristTransform.translation;
+
+	//Vector3 translation = boneTranslation;
+	//translation *= Game::instance.MetresToWorld(1.0f);
+
+
+    float distance1 = (offHandPos - translation).length();
+
+	float distance2 = (offHandPos - rightWristTransform.translation).length();
+
+	Logger::log << "offHandPos: " << offHandPos << std::endl;
+	Logger::log << "leftWristTransform.translation: " << leftWristTransform.translation << std::endl;
+	Logger::log << "rightWristTransform.translation: " << rightWristTransform.translation * Vector3(0.0f, 0.0f, 0.0f) << std::endl;
+	Logger::log << "scaledhandTranslation1: " << translation << std::endl;
+	Logger::log << "scaledhandTranslation2: " << newTransform * Vector3(0.0f, 0.0f, 0.0f) << std::endl;
+	Logger::log << "distance1: " << distance1 << ", distance2: " << distance2 << std::endl;
+	Logger::log << "distance3: " << (translation - offHandPos).lengthSqr() << std::endl;
+
+    //return distance1 < 0.3 || distance1 < 0.3;
+	return (translation - offHandPos).lengthSqr() < 0.3 * 0.3 || distance1 < 0.3 ||
+		(leftWristTransform.translation - offHandPos).lengthSqr() < 0.3 * 0.3;
 }
 
 void WeaponHandler::RelocatePlayer(HaloID& PlayerID)

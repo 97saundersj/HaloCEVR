@@ -1,6 +1,7 @@
 #pragma once
 #include "VR/IVR.h"
 #include <chrono>
+#include "WeaponHandler.h"
 
 class InputHandler
 {
@@ -46,6 +47,8 @@ protected:
 	
 	InputBindingID Recentre = 0;
 	InputBindingID TwoHandGrip = 0;
+
+	WeaponHandler weaponHandler;
 
 private:
 	bool IsHandInHolster(const Vector3& handPos, const Vector3& holsterPos, const float& holsterActivationDistance);

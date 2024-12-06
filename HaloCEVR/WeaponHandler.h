@@ -2,6 +2,7 @@
 #include "Maths/Vectors.h"
 #include "Maths/Matrices.h"
 #include "Helpers/Objects.h"
+#include "Helpers/Maths.h"  // Note: Changed from Maths/Maths.h to Helpers/Maths.h based on file list
 #define DRAW_DEBUG_AIM 0
 
 enum class ScopedWeaponType
@@ -27,6 +28,7 @@ public:
 	bool GetWorldWeaponScope(Vector3& outPosition, Vector3& outAim, Vector3& upDir) const;
 
 	bool IsSniperScope() const;
+	static bool IsHandOverGrip();
 
 	Vector3 localOffset;
 	Vector3 localRotation;
@@ -64,6 +66,9 @@ protected:
 	UnitDynamicObject* weaponFiredPlayer = nullptr;
 	Vector3 realPlayerPosition;
 	Vector3 realPlayerAim;
+
+	static Transform leftWristTransform;  // Transform for left wrist
+    static Transform rightWristTransform; // Transform for right wrist
 
 	// Debug stuff for checking where bullets are coming from/going
 #if DRAW_DEBUG_AIM
