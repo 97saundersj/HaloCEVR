@@ -6,8 +6,8 @@
 #include "Logger.h"
 #include "Game.h"
 
-Transform WeaponHandler::leftWristTransform;
-Transform WeaponHandler::rightWristTransform;
+Vector3 WeaponHandler::leftWeaponGrabWristTransform;
+Vector3 WeaponHandler::leftWristTransform;
 
 // This is a working decomp of the game's original logic for updating the view model's skeleton
 // Only kept here for reference when working on the replacement function below
@@ -221,7 +221,7 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 				}
 				CreateEndCap(boneIndex, currentBone, outBoneTransforms);
 
-				rightWristTransform = outBoneTransforms[boneIndex];
+				//rightWristTransform = outBoneTransforms[boneIndex];
 				/*
 				Logger::log << "outBoneTransforms: " << outBoneTransforms[boneIndex].translation << std::endl;
 				Logger::log << "realTransforms: " << realTransforms[boneIndex].translation << std::endl;
@@ -230,19 +230,24 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 			}
 			else if (boneIndex == cachedViewModel.leftWristIndex)
 			{
-				/*
-				ControllerRole controller = Game::instance.c_LeftHanded->Value() ? ControllerRole::Right : ControllerRole::Left;
-				Vector3 offHandPos = Game::instance.GetVR()->GetControllerTransform(controller, true) * Vector3(0.0f, 0.0f, 0.0f);
 
-				Vector3 boneTranslation = outBoneTransforms[boneIndex].translation;
-				float distance = (offHandPos - boneTranslation).length();
+				// Convert the current bone transform to Matrix4
+    			Matrix4 leftMatrix1;
+    			TransformToMatrix4(outBoneTransforms[boneIndex], leftMatrix1);
+    			// Determine the weapon grip point location
+				// This seems Correct?!
+    			leftWeaponGrabWristTransform = leftMatrix1 * Vector3(0.0f, 0.0f, 0.0f);
 
-				bool handOverGrip = distance < 0.1;
-				if (!handOverGrip)
-				{
-					Game::instance.bUseTwoHandAim = false;
-				}
-				*/
+				Matrix4 newTransform1 = Game::instance.GetVR()->GetControllerTransform(Game::instance.c_LeftHanded->Value() ? ControllerRole::Left : ControllerRole::Right, true);
+				// Apply scale only to translation portion
+				Vector3 translation1 = newTransform1 * Vector3(0.0f, 0.0f, 0.0f);
+				newTransform1.translate(-translation1);
+				translation1 *= Game::instance.MetresToWorld(1.0f);
+				translation1 += *pos;
+				newTransform1.translate(translation1);
+				//MoveBoneToTransform(boneIndex, newTransform, realTransforms, outBoneTransforms);
+				// THis is getting the right wrist
+				leftWristTransform = newTransform1 * Vector3(0.0f, 0.0f, 0.0f);
 
 				if (!Game::instance.bUseTwoHandAim)
 				{
@@ -255,6 +260,8 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 					newTransform.translate(translation);
 
 					MoveBoneToTransform(boneIndex, newTransform, realTransforms, outBoneTransforms);
+
+					//leftWristTransform = newTransform * Vector3(0.0f, 0.0f, 0.0f);
 				}
 				else
 				{
@@ -288,8 +295,10 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 
 				CreateEndCap(boneIndex, currentBone, outBoneTransforms);
 
-				leftWristTransform = outBoneTransforms[boneIndex];
+				
 				/*
+				leftWeaponGrabWristTransform = realTransforms[boneIndex];
+				leftWristTransform = outBoneTransforms[boneIndex];
 				Logger::log << "outBoneTransforms: " << outBoneTransforms[boneIndex].translation << std::endl;
 				Logger::log << "realTransforms: " << realTransforms[boneIndex].translation << std::endl;
 				Logger::log << "eftWristTransform.translation: " << leftWristTransform.translation << std::endl;
@@ -836,35 +845,42 @@ bool WeaponHandler::IsHandOverGrip() {
     ControllerRole controller = Game::instance.c_LeftHanded->Value() ? ControllerRole::Right : ControllerRole::Left;
     Vector3 offHandPos = Game::instance.GetVR()->GetControllerTransform(controller, true) * Vector3(0.0f, 0.0f, 0.0f);
 
-	Matrix4 newTransform = Game::instance.GetVR()->GetControllerTransform(Game::instance.c_LeftHanded->Value() ? ControllerRole::Right : ControllerRole::Left, false);
-	// Apply scale only to translation portion
-	Vector3 translation = rightWristTransform.translation * Vector3(0.0f, 0.0f, 0.0f);
-	newTransform.translate(-translation);
-	translation *= Game::instance.MetresToWorld(0.1f);
-	//translation += *pos;
-	newTransform.translate(translation);
-					
-    Vector3 boneTranslation = rightWristTransform.translation;
+    // Convert wrist transforms to VR space - using MetresToWorld instead of WorldToMetres
+    Vector3 leftWeaponGrabWrist = leftWeaponGrabWristTransform * Game::instance.MetresToWorld(1.0f);
+    Vector3 leftWrist = leftWristTransform * Game::instance.MetresToWorld(1.0f);
 
-	//Vector3 translation = boneTranslation;
-	//translation *= Game::instance.MetresToWorld(1.0f);
+    Matrix4 controllerPos = Game::instance.GetVR()->GetControllerTransform(
+        Game::instance.c_LeftHanded->Value() ? ControllerRole::Right : ControllerRole::Left, 
+        false
+    );
+    
+    Vector3 controllerTranslation = controllerPos * Vector3(0.0f, 0.0f, 0.0f);
 
+	Matrix3 gunRot = Matrix3(
+						1.0f, 0.0f, 0.0f,
+						0.0f, -1.0f, 0.0f,
+						0.0f, 0.0f, 1.0f
+					);
 
-    float distance1 = (offHandPos - translation).length();
+	Game::instance.inGameRenderer.DrawCoordinate(leftWeaponGrabWristTransform, gunRot, 0.1f);
+	Game::instance.inGameRenderer.DrawCoordinate(leftWristTransform, gunRot, 0.1f);
 
-	float distance2 = (offHandPos - rightWristTransform.translation).length();
+    // Debug logging
+    Logger::log << "Raw leftWristTransform: " << leftWeaponGrabWristTransform << std::endl;
+	Logger::log << "Raw rightWristTransform: " << leftWristTransform << std::endl;
+    Logger::log << "Converted leftWristVR: " << leftWeaponGrabWrist << std::endl;
+    Logger::log << "Controller offHandPos: " << offHandPos << std::endl;
+    Logger::log << "Controller translation: " << controllerTranslation << std::endl;
+	Logger::log << "Distance from wrists: " << (leftWeaponGrabWristTransform - leftWristTransform).length() << std::endl;
+    Logger::log << "Distance to offHand: " << (controllerTranslation - offHandPos).length() << std::endl;
+    Logger::log << "Distance to leftWrist: " << (leftWrist - offHandPos).length() << std::endl;
 
-	Logger::log << "offHandPos: " << offHandPos << std::endl;
-	Logger::log << "leftWristTransform.translation: " << leftWristTransform.translation << std::endl;
-	Logger::log << "rightWristTransform.translation: " << rightWristTransform.translation * Vector3(0.0f, 0.0f, 0.0f) << std::endl;
-	Logger::log << "scaledhandTranslation1: " << translation << std::endl;
-	Logger::log << "scaledhandTranslation2: " << newTransform * Vector3(0.0f, 0.0f, 0.0f) << std::endl;
-	Logger::log << "distance1: " << distance1 << ", distance2: " << distance2 << std::endl;
-	Logger::log << "distance3: " << (translation - offHandPos).lengthSqr() << std::endl;
-
-    //return distance1 < 0.3 || distance1 < 0.3;
-	return (translation - offHandPos).lengthSqr() < 0.3 * 0.3 || distance1 < 0.3 ||
-		(leftWristTransform.translation - offHandPos).lengthSqr() < 0.3 * 0.3;
+    float gripThreshold = 0.15f;
+    bool isHandOverGrip = (leftWeaponGrabWristTransform - leftWristTransform).lengthSqr() < gripThreshold * gripThreshold;
+    
+    Logger::log << "bIsGripping: " << Game::instance.bUseTwoHandAim << ", isHandOverGrip: " << isHandOverGrip << std::endl;
+    
+    return isHandOverGrip;
 }
 
 void WeaponHandler::RelocatePlayer(HaloID& PlayerID)

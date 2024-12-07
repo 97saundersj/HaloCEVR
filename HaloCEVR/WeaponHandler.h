@@ -67,8 +67,8 @@ protected:
 	Vector3 realPlayerPosition;
 	Vector3 realPlayerAim;
 
-	static Transform leftWristTransform;  // Transform for left wrist
-    static Transform rightWristTransform; // Transform for right wrist
+	static Vector3 leftWeaponGrabWristTransform;  // Transform for left wrist
+    static Vector3 leftWristTransform; // Transform for right wrist
 
 	// Debug stuff for checking where bullets are coming from/going
 #if DRAW_DEBUG_AIM
