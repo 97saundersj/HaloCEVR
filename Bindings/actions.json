@@ -39,6 +39,11 @@
             "type": "boolean"
         },
         {
+            "name": "/actions/default/in/SwapWeaponHands",
+            "requirement": "suggested",
+            "type": "boolean"
+        },
+        {
             "name": "/actions/default/in/Melee",
             "requirement": "suggested",
             "type": "boolean"
