@@ -1,7 +1,7 @@
 import json
 
 controllers = ["oculus_touch", "knuckles"]
-boolActions = ["Jump","SwitchGrenades","Interact","SwitchWeapons","Melee","Flashlight","Grenade","Fire","MenuForward","MenuBack","Crouch","Zoom","Reload", "Recentre", "TwoHandGrip"]
+boolActions = ["Jump","SwitchGrenades","Interact","SwitchWeapons","Melee","Flashlight","Grenade","Fire","MenuForward","MenuBack","Crouch","Zoom","Reload", "Recentre", "TwoHandGrip", "SwapWeaponHands"]
 vec1Actions = []
 vec2Actions = ["Look", "Move"]
 poseActions = ["Tip"]

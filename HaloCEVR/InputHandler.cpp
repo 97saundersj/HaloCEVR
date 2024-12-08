@@ -28,6 +28,7 @@ void InputHandler::RegisterInputs()
 	RegisterBoolInput(Zoom);
 	RegisterBoolInput(Reload);
 	RegisterBoolInput(TwoHandGrip);
+	RegisterBoolInput(SwapWeaponHands);
 
 	RegisterVector2Input(Move);
 	RegisterVector2Input(Look);
@@ -167,44 +168,71 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		SendInput(1, &input, sizeof(INPUT));
 	}
 
-	bool bGripChanged;
-	bool bIsGripping = vr->GetBoolInput(TwoHandGrip, bGripChanged);
+	bool bWeaponHandChanged;
+	bool bIsSwitchHandsPressed = vr->GetBoolInput(SwapWeaponHands, bWeaponHandChanged);
 
-	if (Game::instance.c_ToggleGrip->Value())
+	float swapHandDistance = Game::instance.c_SwapHandDistance->Value();
+
+	bool handsWithinSwapWeaponDistance = false;
+	if (swapHandDistance >= 0.0f)
 	{
-		if (bGripChanged && bIsGripping)
-		{
-			bWasGripping ^= true;
-		}
+		// Check if hands are within swap distance
+		const Vector3 leftPos = Game::instance.GetVR()->GetControllerTransform(ControllerRole::Left, true) * Vector3(0.0f, 0.0f, 0.0f);
+		const Vector3 rightPos = Game::instance.GetVR()->GetControllerTransform(ControllerRole::Right, true) * Vector3(0.0f, 0.0f, 0.0f);
+		bool handsWithinSwapDistance = (rightPos - leftPos).lengthSqr() < swapHandDistance * swapHandDistance;
 
-		bIsGripping = bWasGripping;
+		if (handsWithinSwapDistance)
+		{
+			handsWithinSwapWeaponDistance = true;
+			// Only toggle hand swap on initial button press when hands are within distance
+			if (bWeaponHandChanged && bIsSwitchHandsPressed)
+			{
+				Game::instance.bLeftHanded = !Game::instance.bLeftHanded;
+			}
+		}
 	}
 
-	float handDistance = Game::instance.c_TwoHandDistance->Value();
-
-	if (handDistance >= 0.0f)
+	if (!handsWithinSwapWeaponDistance)
 	{
-		if (bGripChanged)
-		{
-			if (bIsGripping)
-			{
-				const Vector3 leftPos = Game::instance.GetVR()->GetControllerTransform(ControllerRole::Left, true) * Vector3(0.0f, 0.0f, 0.0f);
-				const Vector3 rightPos = Game::instance.GetVR()->GetControllerTransform(ControllerRole::Right, true) * Vector3(0.0f, 0.0f, 0.0f);
+		bool bGripChanged;
+		bool bIsGripping = vr->GetBoolInput(TwoHandGrip, bGripChanged);
 
-				if ((rightPos - leftPos).lengthSqr() < handDistance * handDistance)
+		if (Game::instance.c_ToggleGrip->Value())
+		{
+			if (bGripChanged && bIsGripping)
+			{
+				bWasGripping ^= true;
+			}
+
+			bIsGripping = bWasGripping;
+		}
+
+		float handDistance = Game::instance.c_TwoHandDistance->Value();
+
+		if (handDistance >= 0.0f)
+		{
+			if (bGripChanged)
+			{
+				if (bIsGripping)
 				{
-					Game::instance.bUseTwoHandAim = true;
+					const Vector3 leftPos = Game::instance.GetVR()->GetControllerTransform(ControllerRole::Left, true) * Vector3(0.0f, 0.0f, 0.0f);
+					const Vector3 rightPos = Game::instance.GetVR()->GetControllerTransform(ControllerRole::Right, true) * Vector3(0.0f, 0.0f, 0.0f);
+
+					if ((rightPos - leftPos).lengthSqr() < handDistance * handDistance)
+					{
+						Game::instance.bUseTwoHandAim = true;
+					}
+				}
+				else
+				{
+					Game::instance.bUseTwoHandAim = false;
 				}
 			}
-			else
-			{
-				Game::instance.bUseTwoHandAim = false;
-			}
 		}
-	}
-	else
-	{
-		Game::instance.bUseTwoHandAim = bIsGripping;
+		else
+		{
+			Game::instance.bUseTwoHandAim = bIsGripping;
+		}
 	}
 
 	Vector2 MoveInput = vr->GetVector2Input(Move);
@@ -370,7 +398,7 @@ unsigned char InputHandler::UpdateHolsterSwitchWeapons()
 	Vector3 rightShoulderPos = headTransform * Game::instance.c_RightShoulderHolsterOffset->Value();
 
 	Vector3 handPos;
-	if (Game::instance.c_LeftHanded->Value())
+	if (Game::instance.bLeftHanded)
 	{
 		handPos = vr->GetRawControllerTransform(ControllerRole::Left) * Vector3(0.0f, 0.0f, 0.0f);
 	}
@@ -467,8 +495,8 @@ void InputHandler::UpdateMouseInfo(MouseInfo* mouseInfo)
 
 bool InputHandler::GetCalculatedHandPositions(Matrix4& controllerTransform, Vector3& dominantHandPos, Vector3& offHand)
 {
-	ControllerRole dominant = Game::instance.c_LeftHanded->Value() ? ControllerRole::Left : ControllerRole::Right;
-	ControllerRole nonDominant = Game::instance.c_LeftHanded->Value() ? ControllerRole::Right : ControllerRole::Left;
+	ControllerRole dominant = Game::instance.bLeftHanded ? ControllerRole::Left : ControllerRole::Right;
+	ControllerRole nonDominant = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
 
 	controllerTransform = Game::instance.GetVR()->GetControllerTransform(dominant, true);
 
