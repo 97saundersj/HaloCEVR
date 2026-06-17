@@ -563,11 +563,15 @@ void InputHandler::CheckOffhandPickup()
 	float dominantDist = (dominantPos - weaponVRPos).lengthSqr();
 	float offhandDist = (offhandPos - weaponVRPos).lengthSqr();
 
+	// Number of frames to wait after an interact press before detecting whether the
+	// weapon landed in the active slot or a secondary slot (typically resolves in 1-2 frames).
+	static constexpr int OFFHAND_PICKUP_FRAME_DELAY = 3;
+
 	if (offhandDist < dominantDist)
 	{
 		// Offhand is closer to the weapon - set up delayed hand swap after pickup
 		bPendingOffhandPickup = true;
-		offhandPickupFramesRemaining = 3;
+		offhandPickupFramesRemaining = OFFHAND_PICKUP_FRAME_DELAY;
 		prePickupWeaponID = player->weapon;
 		prePickupInteractionObjectID = localPlayerDatum.interactionObjectID;
 	}
