@@ -1092,7 +1092,7 @@ void Game::SetupConfigs()
 	c_LeftShoulderHolsterOffset = config.RegisterVector3("LeftShoulderHolsterOffset", "The (foward, left, up) Offset of the left shoulder holster relative to the headset's location", Vector3(-0.15f, 0.25f, -0.25f));
 	c_RightShoulderHolsterActivationDistance = config.RegisterFloat("RightShoulderHolsterDistance", "The 'size' of the right shoulder holster. This is the distance that the dominant hand needs to be from the holster to change weapons (<0 to disable)", 0.3f);
 	c_RightShoulderHolsterOffset = config.RegisterVector3("RightShoulderHolsterOffset", "The (foward, left, up) Offset of the right shoulder holster relative to the headset's location", Vector3(-0.15f, -0.25f, -0.25f));
-	c_HoldByGrip = config.RegisterBool("HoldByGrip", "When enabled, the weapon is positioned so that the controller grip aligns with the weapon's grip point rather than the wrist bone", false);
+	c_HoldByGrip = config.RegisterBool("HoldByGrip", "When enabled, the weapon model is offset so that the weapon's grip point (e.g. the pistol handle) aligns with your controller position, rather than the wrist bone. This means the weapon appears to be held naturally by its handle. Without this option the controller position aligns with the wrist bone, which can cause the handle to appear slightly offset from your hand", false);
 	// Misc settings
 	c_ShowRoomCentre = config.RegisterBool("ShowRoomCentre", "Draw an indicator at your feet to show where the player character is actually positioned", true);
 	c_d3d9Path = config.RegisterString("CustomD3D9Path", "If set first try to load d3d9.dll from the specified path instead of from system32", "");
