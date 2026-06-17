@@ -255,5 +255,6 @@ public:
 	Vector3Property* c_3DOFWeaponOffset = nullptr;
 	FloatProperty* c_3DOFWeaponSmoothingAmount = nullptr;
 	FloatProperty* c_3DOFScopeScale = nullptr;
+	BoolProperty* c_HoldByGrip = nullptr;
 };
 

@@ -53,6 +53,19 @@
                 {
                     "inputs": {
                         "click": {
+                            "output": "/actions/default/in/DominantGrip"
+                        }
+                    },
+                    "mode": "button",
+                    "path": "/user/hand/right/input/grip",
+                    "parameters": {
+                        "click_activate_threshold": 0.8,
+                        "click_deactivate_threshold": 0.7
+                    }
+                },
+                {
+                    "inputs": {
+                        "click": {
                             "output": "/actions/default/in/SwitchWeapons"
                         }
                     },

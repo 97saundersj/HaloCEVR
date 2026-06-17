@@ -294,6 +294,24 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 							}
 
 						}
+
+						// Feature: Hold by grip - offset the wrist so the weapon's grip bone
+						// aligns with the controller rather than the wrist bone.
+						// cachedViewModel.gunOffset holds the wrist-to-gun offset in hand-local
+						// space (computed from the previous frame, acceptable 1-frame lag).
+						// Skip if gunOffset is zero - this happens on the first frame after a
+						// weapon switch before the offset has been computed from the bone pose.
+						if (Game::instance.c_HoldByGrip->Value() && cachedViewModel.gunOffset.lengthSqr() > 0.0f)
+						{
+							Vector3 handPos = newTransform * Vector3(0.0f, 0.0f, 0.0f);
+							Matrix4 handRot = newTransform;
+							handRot.translate(-handPos);
+							// Convert hand-local gun offset to world space and reverse it so
+							// the gun grip lands at the controller position.
+							Vector3 worldGunOffset = handRot * cachedViewModel.gunOffset;
+							newTransform.translate(-worldGunOffset);
+						}
+
 						MoveBoneToTransform(boneIndex, newTransform, realTransforms, outBoneTransforms);
 					}
 					else
