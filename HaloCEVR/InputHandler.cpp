@@ -4,12 +4,30 @@
 #include "Helpers/Camera.h"
 #include "Helpers/Menus.h"
 #include "Helpers/Maths.h"
+#include "Helpers/Objects.h"
 
 
 #define RegisterBoolInput(set, x) x = vr->RegisterBoolInput(set, #x);
 #define RegisterVector2Input(set, x) x = vr->RegisterVector2Input(set, #x);
 #define ApplyBoolInput(x) controls.##x = vr->GetBoolInput(x) ? 127 : 0;
 #define ApplyImpulseBoolInput(x) controls.##x = vr->GetBoolInput(x, bHasChanged) && bHasChanged ? 127 : 0;
+
+template<typename T>
+static void MaybeSuppressEmptyMagAutoReload(T& controls)
+{
+	if (!Game::instance.c_DisableEmptyMagazineAutoReload || !Game::instance.c_DisableEmptyMagazineAutoReload->Value())
+	{
+		return;
+	}
+	if (!controls.Fire || controls.Reload)
+	{
+		return;
+	}
+	if (Helpers::ShouldSuppressFireToPreventEmptyMagReload())
+	{
+		controls.Fire = 0;
+	}
+}
 
 void InputHandler::RegisterInputs()
 {
@@ -92,6 +110,8 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
 
+		MaybeSuppressEmptyMagAutoReload(controls);
+
 		Game::instance.bIsFiring = controls.Fire;
 	}
 	else
@@ -110,6 +130,8 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
+
+		MaybeSuppressEmptyMagAutoReload(controls);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
