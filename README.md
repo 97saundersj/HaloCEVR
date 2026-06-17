@@ -186,10 +186,6 @@ HandRelativeOffsetRotation = -20
 Change HandRelativeMovement to 1 for movement to follow your left hand direction or 2 for movement to follow your right hand direction.
 ### How do I turn the crosshair off?
 Open the VR config.txt file and change "ShowCrosshair" to false - "ShowCrosshair=false"
-### What does the HoldByGrip setting do?
-By default, the weapon model is aligned so that the wrist bone of the weapon matches your controller's position. With some weapons this can cause the weapon's handle to appear slightly displaced from your hand, as if you are holding it by the wrist rather than by the grip.
-
-When `HoldByGrip=true` is set in `config.txt`, the weapon is instead offset so that the weapon's grip point (e.g. the pistol handle) aligns with your controller position. This makes it appear as though you are naturally gripping the weapon's handle. The trade-off is that the weapon may appear further along your arm compared to the default behaviour.
 ### Things feel constantly jittery in vehicles
 Halo internally runs a lower tick rate (I believe it is 30fps) and only interpolates the player camera, this makes things feel jittery when driving vehicles. To fix this install [chimera](https://github.com/SnowyMouse/chimera), as they have fixed this issue along with many others. If you still experience intermittent stuttering on vehicles it may be due to the motion smoothing kicking in and locking the frame rate to 45 for a few seconds, you may experience smoother results by disabling it. 
 ### Does this mod support OpenXR?
