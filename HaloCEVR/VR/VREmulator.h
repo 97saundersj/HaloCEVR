@@ -89,7 +89,7 @@ protected:
 		bool bPressed = false;
 	};
 
-	Binding bindings[13] = {
+	Binding bindings[14] = {
 		{"Jump", VK_SPACE},
 		{"SwitchGrenades", 'G'},
 		{"Interact", 'E'},
@@ -102,7 +102,8 @@ protected:
 		{"Crouch", VK_LCONTROL},
 		{"Zoom", 'Z'},
 		{"Reload", 'R'},
-		{"EMU_MoveHandSwap", 'H'}
+		{"EMU_MoveHandSwap", 'H'},
+		{"DominantGrip", VK_RSHIFT},
 	};
 
 	struct AxisBinding

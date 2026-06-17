@@ -169,6 +169,16 @@
             "type": "boolean"
         },
         {
+            "name": "/actions/default/in/DominantGrip",
+            "requirement": "suggested",
+            "type": "boolean"
+        },
+        {
+            "name": "/actions/left handed/in/DominantGrip",
+            "requirement": "suggested",
+            "type": "boolean"
+        },
+        {
             "name": "/actions/default/in/SwapWeaponHand",
             "requirement": "suggested",
             "type": "boolean"

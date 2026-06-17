@@ -45,6 +45,7 @@ void InputHandler::UpdateRegisteredInputs()
 	RegisterBoolInput(actionSet, Zoom);
 	RegisterBoolInput(actionSet, Reload);
 	RegisterBoolInput(actionSet, TwoHandGrip);
+	RegisterBoolInput(actionSet, DominantGrip);
 
 	RegisterVector2Input(actionSet, Move);
 	RegisterVector2Input(actionSet, Look);
@@ -807,6 +808,22 @@ void InputHandler::UpdateTwoHandedHold(float handDistance, bool handsWithinSwapW
 
 	bool bGripChanged;
 	bool bIsGripping = vr->GetBoolInput(TwoHandGrip, bGripChanged);
+
+	// Hold-by-grip: when two-hand aim is active, if the dominant hand releases its grip
+	// while the off-hand is still physically holding on, transfer weapon ownership to the
+	// off-hand (the grip hand). This lets the player free their dominant hand (e.g. to
+	// throw a grenade) while keeping the weapon stable in the grip hand.
+	bool bDominantGripChanged;
+	bool bIsDominantGripping = vr->GetBoolInput(DominantGrip, bDominantGripChanged);
+
+	if (Game::instance.bUseTwoHandAim && bDominantGripChanged && !bIsDominantGripping && bIsGripping)
+	{
+		Game::instance.bLeftHanded = !Game::instance.bLeftHanded;
+		Game::instance.bUseTwoHandAim = false;
+		bWasGripping = false;
+		UpdateRegisteredInputs();
+		return;
+	}
 
 	if (handsWithinSwapWeaponDistance)
 	{

@@ -71,6 +71,7 @@ protected:
 	
 	InputBindingID Recentre = 0;
 	InputBindingID TwoHandGrip = 0;
+	InputBindingID DominantGrip = 0;
 
 	InputBindingID SwapWeaponHand = 0;
 	InputBindingID OffhandSwapWeaponHand = 0;
