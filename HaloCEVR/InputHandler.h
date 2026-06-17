@@ -1,5 +1,6 @@
 #pragma once
 #include "VR/IVR.h"
+#include "Helpers/Objects.h"
 #include <chrono>
 
 class InputHandler
@@ -25,9 +26,18 @@ protected:
 
 
 	unsigned char UpdateFlashlight();
+	// Returns 0 = no holster, 1 = dominant hand holster, 2 = offhand holster
 	unsigned char UpdateHolsterSwitchWeapons();
 	unsigned char UpdateMelee();
 	unsigned char UpdateCrouch();
+
+	void CheckOffhandPickup();
+
+	// State for picking up weapons directly into the offhand
+	bool bPendingOffhandPickup = false;
+	int offhandPickupFramesRemaining = 0;
+	struct HaloID prePickupWeaponID = { 0xFFFF, 0xFFFF };
+	struct HaloID prePickupInteractionObjectID = { 0xFFFF, 0xFFFF };
 
 	// Update Controls that rely on the distance between hands
 	void UpdateHandsProximity();

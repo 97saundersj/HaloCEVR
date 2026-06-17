@@ -4,6 +4,7 @@
 #include "Helpers/Camera.h"
 #include "Helpers/Menus.h"
 #include "Helpers/Maths.h"
+#include "Helpers/Objects.h"
 
 
 #define RegisterBoolInput(set, x) x = vr->RegisterBoolInput(set, #x);
@@ -145,6 +146,14 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 				Controls& controls = Helpers::GetControls();
 				ApplyImpulseBoolInput(SwitchWeapons);
 			}
+
+			// When the offhand is in a holster, toggle the dominant hand so the
+			// switched weapon ends up held by the offhand controller.
+			if (HolsterSwitchWeapons == 2)
+			{
+				Game::instance.bLeftHanded = !Game::instance.bLeftHanded;
+				UpdateRegisteredInputs();
+			}
 		}
 	}
 	else
@@ -160,6 +169,8 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 			ApplyImpulseBoolInput(SwitchWeapons);
 		}
 	}
+
+	CheckOffhandPickup();
 
 	unsigned char MotionControlMelee = UpdateMelee();
 	if (MotionControlMelee > 0)
@@ -427,20 +438,24 @@ unsigned char InputHandler::UpdateHolsterSwitchWeapons()
 	Vector3 leftShoulderPos = headTransform * Game::instance.c_LeftShoulderHolsterOffset->Value();
 	Vector3 rightShoulderPos = headTransform * Game::instance.c_RightShoulderHolsterOffset->Value();
 
-	Vector3 handPos;
-	if (Game::instance.bLeftHanded)
+	ControllerRole dominant = Game::instance.bLeftHanded ? ControllerRole::Left : ControllerRole::Right;
+	ControllerRole nonDominant = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
+
+	Vector3 dominantHandPos = vr->GetRawControllerTransform(dominant) * Vector3(0.0f, 0.0f, 0.0f);
+	Vector3 offhandPos = vr->GetRawControllerTransform(nonDominant) * Vector3(0.0f, 0.0f, 0.0f);
+
+	// Check dominant hand first
+	if (InputHandler::IsHandInHolster(dominantHandPos, leftShoulderPos, Game::instance.c_LeftShoulderHolsterActivationDistance->Value())
+		|| InputHandler::IsHandInHolster(dominantHandPos, rightShoulderPos, Game::instance.c_RightShoulderHolsterActivationDistance->Value()))
 	{
-		handPos = vr->GetRawControllerTransform(ControllerRole::Left) * Vector3(0.0f, 0.0f, 0.0f);
-	}
-	else
-	{
-		handPos = vr->GetRawControllerTransform(ControllerRole::Right) * Vector3(0.0f, 0.0f, 0.0f);
+		return 1;
 	}
 
-	if (InputHandler::IsHandInHolster(handPos, leftShoulderPos, Game::instance.c_LeftShoulderHolsterActivationDistance->Value()) 
-		|| InputHandler::IsHandInHolster(handPos, rightShoulderPos, Game::instance.c_RightShoulderHolsterActivationDistance->Value()))
+	// Check offhand - returns 2 to signal that the swap should also toggle the dominant hand
+	if (InputHandler::IsHandInHolster(offhandPos, leftShoulderPos, Game::instance.c_LeftShoulderHolsterActivationDistance->Value())
+		|| InputHandler::IsHandInHolster(offhandPos, rightShoulderPos, Game::instance.c_RightShoulderHolsterActivationDistance->Value()))
 	{
-		return 127;
+		return 2;
 	}
 
 	return 0;
@@ -450,6 +465,112 @@ unsigned char InputHandler::UpdateHolsterSwitchWeapons()
 bool InputHandler::IsHandInHolster(const Vector3& handPos, const Vector3& holsterPos, const float& holsterActivationDistance)
 {
 	return (holsterPos - handPos).lengthSqr() < holsterActivationDistance * holsterActivationDistance;
+}
+
+void InputHandler::CheckOffhandPickup()
+{
+	IVR* vr = Game::instance.GetVR();
+
+	// Resolve any pending offhand pickup from a previous frame
+	if (bPendingOffhandPickup)
+	{
+		offhandPickupFramesRemaining--;
+
+		BaseDynamicObject* player = Helpers::GetLocalPlayer();
+		if (player)
+		{
+			bool bWeaponChanged = (player->weapon.id != prePickupWeaponID.id || player->weapon.index != prePickupWeaponID.index);
+			if (bWeaponChanged)
+			{
+				// The active weapon was replaced by the pickup.
+				// Toggle the dominant hand so the new weapon is held by the offhand controller.
+				Game::instance.bLeftHanded = !Game::instance.bLeftHanded;
+				UpdateRegisteredInputs();
+				bPendingOffhandPickup = false;
+				return;
+			}
+
+			if (offhandPickupFramesRemaining <= 0)
+			{
+				// The active weapon did not change; the new weapon may have filled the
+				// secondary (inactive) slot.  Switch to it and then toggle the dominant
+				// hand so it ends up in the offhand controller.
+				BaseDynamicObject* interactionObj = Helpers::GetDynamicObject(prePickupInteractionObjectID);
+				bool bWeaponPickedUp = (interactionObj == nullptr)
+					|| (interactionObj->N0000027E != ObjectType::WEAPON);
+
+				if (bWeaponPickedUp)
+				{
+					if (Game::instance.bIsCustom)
+					{
+						Helpers::GetControlsCustom().SwitchWeapons = 127;
+					}
+					else
+					{
+						Helpers::GetControls().SwitchWeapons = 127;
+					}
+					Game::instance.bLeftHanded = !Game::instance.bLeftHanded;
+					UpdateRegisteredInputs();
+				}
+				bPendingOffhandPickup = false;
+			}
+		}
+		else
+		{
+			bPendingOffhandPickup = false;
+		}
+		return;
+	}
+
+	// Detect an Interact press while the offhand is closer to a weapon than the dominant hand
+	bool bInteractChanged = false;
+	bool bInteractPressed = vr->GetBoolInput(Interact, bInteractChanged);
+	if (!bInteractChanged || !bInteractPressed)
+	{
+		return;
+	}
+
+	PlayerTable& playerTable = Helpers::GetPlayerTable();
+	if (playerTable.currentSize == 0)
+	{
+		return;
+	}
+
+	// Note: elements[0] is the local player in single-player (and the local client in MP).
+	PlayerDatum& localPlayerDatum = playerTable.elements[0];
+	if (static_cast<ObjectType>(localPlayerDatum.interactionObjectType) != ObjectType::WEAPON)
+	{
+		return;
+	}
+
+	BaseDynamicObject* interactionObj = Helpers::GetDynamicObject(localPlayerDatum.interactionObjectID);
+	BaseDynamicObject* player = Helpers::GetLocalPlayer();
+	if (!interactionObj || !player)
+	{
+		return;
+	}
+
+	// Convert interaction object world position to VR space for distance comparison
+	Camera& cam = Helpers::GetCamera();
+	Vector3 weaponVRPos = (interactionObj->position - cam.position) * Game::instance.WorldToMetres(1.0f);
+
+	ControllerRole dominant = Game::instance.bLeftHanded ? ControllerRole::Left : ControllerRole::Right;
+	ControllerRole nonDominant = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
+
+	Vector3 dominantPos = vr->GetRawControllerTransform(dominant) * Vector3(0.0f, 0.0f, 0.0f);
+	Vector3 offhandPos = vr->GetRawControllerTransform(nonDominant) * Vector3(0.0f, 0.0f, 0.0f);
+
+	float dominantDist = (dominantPos - weaponVRPos).lengthSqr();
+	float offhandDist = (offhandPos - weaponVRPos).lengthSqr();
+
+	if (offhandDist < dominantDist)
+	{
+		// Offhand is closer to the weapon - set up delayed hand swap after pickup
+		bPendingOffhandPickup = true;
+		offhandPickupFramesRemaining = 3;
+		prePickupWeaponID = player->weapon;
+		prePickupInteractionObjectID = localPlayerDatum.interactionObjectID;
+	}
 }
 
 unsigned char InputHandler::UpdateMelee()
