@@ -26,7 +26,25 @@ static void MaybeSuppressEmptyMagAutoReload(T& controls)
 	if (Helpers::ShouldSuppressFireToPreventEmptyMagReload())
 	{
 		controls.Fire = 0;
+		// Controls are written after HandleInputs.Original(); the game may also read InputData.firing.
+		Helpers::GetInputData().firing = 0.0f;
 	}
+}
+
+bool InputHandler::IsReloadPressed() const
+{
+	IVR* vr = Game::instance.GetVR();
+	return vr && vr->GetBoolInput(Reload);
+}
+
+bool InputHandler::ShouldBlockAutoReloadStart() const
+{
+	if (!Game::instance.c_DisableEmptyMagazineAutoReload || !Game::instance.c_DisableEmptyMagazineAutoReload->Value())
+	{
+		return false;
+	}
+
+	return !IsReloadPressed();
 }
 
 void InputHandler::RegisterInputs()

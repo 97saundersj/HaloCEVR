@@ -859,6 +859,11 @@ bool Game::GetCalculatedHandPositions(Matrix4& controllerTransform, Vector3& dom
 	return inputHandler.GetCalculatedHandPositions(controllerTransform, dominantHandPos, offHand);
 }
 
+bool Game::ShouldBlockAutoReloadStart() const
+{
+	return inputHandler.ShouldBlockAutoReloadStart();
+}
+
 void Game::ReloadStart(HaloID param1, short param2, bool param3)
 {
 	VR_PROFILE_SCOPE(Game_ReloadStart);

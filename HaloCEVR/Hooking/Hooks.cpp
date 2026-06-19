@@ -900,6 +900,13 @@ void Hooks::H_ReloadStart(HaloID param1, short param2, bool param3)
 {
 	VR_PROFILE_SCOPE(Hooks_ReloadStart);
 
+	// Auto-reload is started inside the game (often when the last round fires), before VR
+	// controls are applied in H_HandleInputs. Clearing Controls.Fire alone is too late.
+	if (Game::instance.ShouldBlockAutoReloadStart())
+	{
+		return;
+	}
+
 	ReloadStart.Original(param1, param2, param3);
 
 	Game::instance.ReloadStart(param1, param2, param3);
