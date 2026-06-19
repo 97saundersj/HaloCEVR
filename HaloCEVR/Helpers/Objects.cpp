@@ -48,22 +48,3 @@ BaseDynamicObject* Helpers::GetLocalPlayer()
 
 	return GetDynamicObject(playerID);
 }
-
-bool Helpers::ShouldSuppressFireToPreventEmptyMagReload()
-{
-	UnitDynamicObject* player = static_cast<UnitDynamicObject*>(GetLocalPlayer());
-	if (!player)
-	{
-		return false;
-	}
-
-	WeaponDynamicObject* weaponObj = static_cast<WeaponDynamicObject*>(GetDynamicObject(player->weapon));
-	if (!weaponObj)
-	{
-		return false;
-	}
-
-	// weaponData[0] is the primary weapon; dual-wield off-hand may use weaponData[1] (not handled here).
-	const Weapon& w = weaponObj->weaponData[0];
-	return w.ammo == 0 && w.reserveAmmo > 0;
-}

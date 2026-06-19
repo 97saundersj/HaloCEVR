@@ -238,7 +238,4 @@ namespace Helpers
 	BaseDynamicObject* GetDynamicObject(HaloID& ID);
 	bool GetLocalPlayerID(HaloID& OutID);
 	BaseDynamicObject* GetLocalPlayer();
-
-	// True when held weapon (weaponData[0]) has no rounds in mag but still has reserve — vanilla Halo starts a reload on held fire in this state.
-	bool ShouldSuppressFireToPreventEmptyMagReload();
 }
