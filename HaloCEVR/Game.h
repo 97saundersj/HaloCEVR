@@ -238,6 +238,7 @@ public:
 	FloatProperty* c_LeftHandMeleeSwingSpeed = nullptr;
 	FloatProperty* c_RightHandMeleeSwingSpeed = nullptr;
 	FloatProperty* c_CrouchHeight = nullptr;
+	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
 	BoolProperty* c_ShowRoomCentre = nullptr;
 	BoolProperty* c_ToggleGrip = nullptr;
 	FloatProperty* c_TwoHandDistance = nullptr;
@@ -256,6 +257,5 @@ public:
 	Vector3Property* c_3DOFWeaponOffset = nullptr;
 	FloatProperty* c_3DOFWeaponSmoothingAmount = nullptr;
 	FloatProperty* c_3DOFScopeScale = nullptr;
-	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
 };
 
