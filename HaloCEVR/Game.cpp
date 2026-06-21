@@ -1076,7 +1076,8 @@ void Game::UpdateVehicleState(UnitDynamicObject* player)
 		left.normalize();
 	}
 
-	up = facing.cross(left).normalize();
+	up = facing.cross(left);
+	up.normalize();
 
 	const Vector3 cameraOffset = c_WarthogDriverCameraOffset->Value();
 	const Vector3 targetAnchor = vehicle->position
@@ -1096,8 +1097,10 @@ void Game::UpdateVehicleState(UnitDynamicObject* player)
 	else
 	{
 		vehicleViewAnchorPosition = Helpers::Lerp(vehicleViewAnchorPosition, targetAnchor, t);
-		vehicleViewAnchorFacing = Helpers::Lerp(vehicleViewAnchorFacing, facing, t).normalize();
-		vehicleViewAnchorUp = Helpers::Lerp(vehicleViewAnchorUp, up, t).normalize();
+		vehicleViewAnchorFacing = Helpers::Lerp(vehicleViewAnchorFacing, facing, t);
+		vehicleViewAnchorFacing.normalize();
+		vehicleViewAnchorUp = Helpers::Lerp(vehicleViewAnchorUp, up, t);
+		vehicleViewAnchorUp.normalize();
 	}
 
 	bVehicleViewAnchorValid = true;
@@ -1105,8 +1108,10 @@ void Game::UpdateVehicleState(UnitDynamicObject* player)
 
 Vector3 Game::GetVehicleDriverHeadOffset(const Matrix4& headMatrix) const
 {
-	Vector3 facing = vehicleViewAnchorFacing.normalize();
-	Vector3 up = vehicleViewAnchorUp.normalize();
+	Vector3 facing = vehicleViewAnchorFacing;
+	facing.normalize();
+	Vector3 up = vehicleViewAnchorUp;
+	up.normalize();
 	Vector3 right = facing.cross(up);
 
 	if (right.lengthSqr() < 1e-6f)
@@ -1128,9 +1133,12 @@ Vector3 Game::GetVehicleDriverHeadOffset(const Matrix4& headMatrix) const
 
 void Game::BuildVehicleDriverViewOrientation(const Matrix4& headMatrix, Vector3& outFacing, Vector3& outUp) const
 {
-	Vector3 baseFacing = vehicleViewAnchorFacing.normalize();
-	Vector3 baseUp = vehicleViewAnchorUp.normalize();
-	Vector3 rawFacing = headMatrix.getLeftAxis().normalize();
+	Vector3 baseFacing = vehicleViewAnchorFacing;
+	baseFacing.normalize();
+	Vector3 baseUp = vehicleViewAnchorUp;
+	baseUp.normalize();
+	Vector3 rawFacing = headMatrix.getLeftAxis();
+	rawFacing.normalize();
 
 	float verticalDot = std::clamp(rawFacing.dot(baseUp), -1.0f, 1.0f);
 	Vector3 horizontalFacing = rawFacing - baseUp * verticalDot;
@@ -1148,7 +1156,8 @@ void Game::BuildVehicleDriverViewOrientation(const Matrix4& headMatrix, Vector3&
 	const float clampedPitch = std::clamp(pitchDegrees, c_VehicleViewPitchMin->Value(), c_VehicleViewPitchMax->Value());
 	const float clampedPitchRadians = clampedPitch * DEG_TO_RAD;
 
-	outFacing = (horizontalFacing * std::cos(clampedPitchRadians) + baseUp * std::sin(clampedPitchRadians)).normalize();
+	outFacing = horizontalFacing * std::cos(clampedPitchRadians) + baseUp * std::sin(clampedPitchRadians);
+	outFacing.normalize();
 
 	Vector3 right = outFacing.cross(baseUp);
 	if (right.lengthSqr() < 1e-6f)
@@ -1164,7 +1173,8 @@ void Game::BuildVehicleDriverViewOrientation(const Matrix4& headMatrix, Vector3&
 		right.normalize();
 	}
 
-	outUp = right.cross(outFacing).normalize();
+	outUp = right.cross(outFacing);
+	outUp.normalize();
 }
 
 bool Game::TryGetWarthogDriverViewOrigin(bool bRenderPose, Vector3& outOrigin, Vector3* outFacing, Vector3* outUp) const
