@@ -22,6 +22,7 @@ A full VR conversion mod for the original 2003 PC edition of _Halo: Combat Evolv
 * Motion controlled crouching
 * Shoulder weapon holsters (for switching weapons)
 * Swapping weapons between hands
+* Experimental first-person warthog driver view
 * Detached floating UI layer
 * Floating crosshair
 * Joystick steered vehicles
@@ -32,6 +33,7 @@ A full VR conversion mod for the original 2003 PC edition of _Halo: Combat Evolv
 * First stage of the tutorial ("look around") doesn't detect headset movement. Wiggle the mouse (physically or via SteamVR's desktop view) and you should get past it
 * Camera briefly behaves weirdly when entering/exiting vehicles
 * Reloading a checkpoint made while in a vehicle can mess with the camera position, get out and in again to fix it
+* Experimental first-person warthog driver view is only intended for the driver seat, and may need per-headset config tweaking for comfort
 * Melee and interact use head aiming rather than controller aiming
 * Crosshair only lights up red when looking at an enemy, not when pointing a gun at one
 * On screen button prompts display keyboard bindings rather than VR bindings
@@ -188,6 +190,8 @@ Change HandRelativeMovement to 1 for movement to follow your left hand direction
 Open the VR config.txt file and change "ShowCrosshair" to false - "ShowCrosshair=false"
 ### Things feel constantly jittery in vehicles
 Halo internally runs a lower tick rate (I believe it is 30fps) and only interpolates the player camera, this makes things feel jittery when driving vehicles. To fix this install [chimera](https://github.com/SnowyMouse/chimera), as they have fixed this issue along with many others. If you still experience intermittent stuttering on vehicles it may be due to the motion smoothing kicking in and locking the frame rate to 45 for a few seconds, you may experience smoother results by disabling it. 
+### Can I make the warthog first-person?
+Yes, experimentally. Set `VehicleViewMode = 1` in `VR/config.txt` to enable the prototype first-person warthog driver view. It only targets the driver seat right now. The main comfort tuning settings are `WarthogDriverCameraOffset`, `VehicleViewHeadMotionScale`, `VehicleViewSmoothing`, `VehicleViewPitchMin`, and `VehicleViewPitchMax`.
 ### Does this mod support OpenXR?
 No, this mod is exclusively for SteamVR since it is the only runtime to support 32bit applications to my knowledge.  This means you need to choose the SteamVR runtime in your VR software if available. For example, with Oculus Link you need to make sure you have SteamVR running, or with WMR you need to use the SteamVR runtime.
 ### Help the camera is too high/too low (or crouch seems to be stuck on)
@@ -211,5 +215,4 @@ Thank you! See compiling source directions below and submit a Pull Request on Gi
 It is my wish this mod be kept on PC only. This mod was made in part to help boost PCVR by increasing the number of PC exclusives and make PC a more appealing choice. Cheap standalone devices have taken VR down a path of games cut down to run glorified mobile phones and not the breathtaking immersive worlds Half-Life Alyx promised. I want no part in continuing that with this mod.
 
 Additionally this mod would not have been possible without other, free, open source mods to inspire me and to learn from. If you want to make your own mod I implore you to release it freely for the community's sake.
-
 

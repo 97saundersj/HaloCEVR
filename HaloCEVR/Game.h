@@ -18,6 +18,8 @@
 #include "UI/SettingsMenu.h"
 
 enum class ERenderState { UNKNOWN, LEFT_EYE, RIGHT_EYE, GAME, SCOPE};
+enum class EVehicleSeatRole { None, Driver, Gunner, Passenger };
+enum class EVehicleViewMode { Disabled = 0, WarthogDriver = 1 };
 
 class Game
 {
@@ -69,6 +71,9 @@ public:
 	void UpdateCamera(float& yaw, float& pitch);
 	void SetMousePosition(int& x, int& y);
 	void UpdateMouseInfo(struct MouseInfo* mouseInfo);
+	bool ShouldUseWarthogDriverView() const;
+	bool TryGetWarthogDriverViewOrigin(bool bRenderPose, Vector3& outOrigin, Vector3* outFacing = nullptr, Vector3* outUp = nullptr) const;
+	bool TryApplyVehicleDriverView(struct CameraFrustum& frustum, const Matrix4& headMatrix, const Matrix4& eyeMatrix) const;
 
 	void SetViewportScale(struct Viewport* viewport);
 
@@ -186,6 +191,13 @@ protected:
 
 	bool bInVehicle = false;
 	bool bHasWeapon = true;
+	HaloID activeVehicleID = { 0xffff, 0xffff };
+	EVehicleSeatRole vehicleSeatRole = EVehicleSeatRole::None;
+	bool bVehicleIsWarthog = false;
+	bool bVehicleViewAnchorValid = false;
+	Vector3 vehicleViewAnchorPosition = Vector3(0.0f, 0.0f, 0.0f);
+	Vector3 vehicleViewAnchorFacing = Vector3(1.0f, 0.0f, 0.0f);
+	Vector3 vehicleViewAnchorUp = Vector3(0.0f, 0.0f, 1.0f);
 
 	ERenderState mirrorSource;
 
@@ -218,6 +230,12 @@ public:
 	FloatProperty* c_HandRelativeOffsetRotation = nullptr;
 	FloatProperty* c_HorizontalVehicleTurnAmount = nullptr;
 	FloatProperty* c_VerticalVehicleTurnAmount = nullptr;
+	IntProperty* c_VehicleViewMode = nullptr;
+	Vector3Property* c_WarthogDriverCameraOffset = nullptr;
+	Vector3Property* c_VehicleViewHeadMotionScale = nullptr;
+	FloatProperty* c_VehicleViewSmoothing = nullptr;
+	FloatProperty* c_VehicleViewPitchMin = nullptr;
+	FloatProperty* c_VehicleViewPitchMax = nullptr;
 	BoolProperty* c_OffhandHandFlashlight = nullptr;
 	FloatProperty* c_LeftHandFlashlightDistance = nullptr;
 	FloatProperty* c_RightHandFlashlightDistance = nullptr;
@@ -255,5 +273,11 @@ public:
 	Vector3Property* c_3DOFWeaponOffset = nullptr;
 	FloatProperty* c_3DOFWeaponSmoothingAmount = nullptr;
 	FloatProperty* c_3DOFScopeScale = nullptr;
-};
 
+protected:
+	void UpdateVehicleState(UnitDynamicObject* player);
+	void ResetVehicleViewState();
+	bool IsWarthogDriverViewEnabled() const;
+	Vector3 GetVehicleDriverHeadOffset(const Matrix4& headMatrix) const;
+	void BuildVehicleDriverViewOrientation(const Matrix4& headMatrix, Vector3& outFacing, Vector3& outUp) const;
+};

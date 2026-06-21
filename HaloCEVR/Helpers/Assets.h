@@ -118,9 +118,19 @@ struct Asset_GBXModel : public Asset_Base
 	char pad_0018[8]; //0x0018
 };
 
+struct Asset_PathTagged : public Asset_Base
+{
+	char pad_0004[12]; //0x0004
+	char* AssetPath; //0x0010
+	void* AssetData; //0x0014
+	char pad_0018[8]; //0x0018
+};
+static_assert(sizeof(Asset_PathTagged) == 0x20);
+
 namespace Helpers
 {
 	Asset_Generic* GetAssetArray();
+	const char* GetAssetPath(HaloID ID);
 
 	template<typename T>
 	T* GetTypedAsset(HaloID ID)
