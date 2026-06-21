@@ -21,12 +21,13 @@
 #include "Helpers/Cutscene.h"
 #include <algorithm>
 #include <cctype>
-#include <string>
+#include <cstring>
 
 namespace
 {
-	constexpr float RAD_TO_DEG = 180.0f / 3.1415926f;
-	constexpr float DEG_TO_RAD = 3.1415926f / 180.0f;
+	constexpr float PI_F = 3.14159265358979323846f;
+	constexpr float RAD_TO_DEG = 180.0f / PI_F;
+	constexpr float DEG_TO_RAD = PI_F / 180.0f;
 
 	bool IsValidHaloID(const HaloID& id)
 	{
@@ -40,13 +41,19 @@ namespace
 			return false;
 		}
 
-		std::string haystack(text);
-		std::string needle(search);
+		const std::size_t textLength = std::strlen(text);
+		const std::size_t searchLength = std::strlen(search);
 
-		std::transform(haystack.begin(), haystack.end(), haystack.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-		std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		if (searchLength == 0 || searchLength > textLength)
+		{
+			return false;
+		}
 
-		return haystack.find(needle) != std::string::npos;
+		return std::search(text, text + textLength, search, search + searchLength,
+			[](char a, char b)
+			{
+				return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+			}) != text + textLength;
 	}
 }
 
