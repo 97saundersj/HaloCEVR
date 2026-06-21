@@ -11,20 +11,15 @@
 #define ApplyBoolInput(x) controls.##x = vr->GetBoolInput(x) ? 127 : 0;
 #define ApplyImpulseBoolInput(x) controls.##x = vr->GetBoolInput(x, bHasChanged) && bHasChanged ? 127 : 0;
 
-bool InputHandler::IsReloadPressed() const
-{
-	IVR* vr = Game::instance.GetVR();
-	return vr && vr->GetBoolInput(Reload);
-}
-
 bool InputHandler::ShouldBlockAutoReloadStart() const
 {
-	if (!Game::instance.c_DisableEmptyMagazineAutoReload || !Game::instance.c_DisableEmptyMagazineAutoReload->Value())
+	if (!Game::instance.c_DisableEmptyMagazineAutoReload->Value())
 	{
 		return false;
 	}
 
-	return !IsReloadPressed();
+	IVR* vr = Game::instance.GetVR();
+	return !vr->GetBoolInput(Reload);
 }
 
 void InputHandler::RegisterInputs()

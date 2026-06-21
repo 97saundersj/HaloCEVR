@@ -1074,7 +1074,6 @@ void Game::SetupConfigs()
 	c_LeftHandMeleeSwingSpeed = config.RegisterFloat("LeftHandMeleeSwingSpeed", "Minimum vertical velocity of left hand required to initiate a melee attack in m/s (<0 to disable)", 2.5f);
 	c_RightHandMeleeSwingSpeed = config.RegisterFloat("RightHandMeleeSwingSpeed", "Minimum vertical velocity of right hand required to initiate a melee attack in m/s (<0 to disable)", 2.5f);
 	c_CrouchHeight = config.RegisterFloat("CrouchHeight", "Minimum height to duck by in metres to automatically trigger the crouch input in game (<0 to disable)", 0.15f);
-	c_DisableEmptyMagazineAutoReload = config.RegisterBool("DisableEmptyMagazineAutoReload", "When enabled, the game will not automatically reload when the magazine is empty. Press Reload to reload manually", false);
 	// Hand settings
 	c_ControllerOffset = config.RegisterVector3("ControllerOffset", "Offset from the controller's position used when calculating the in game hand position", Vector3(0.0f, 0.0f, 0.0f));
 	c_ControllerRotation = config.RegisterVector3("ControllerRotation", "Rotation added to the controller when calculating the in game hand rotation", Vector3(0.0f, 0.0f, 0.0f));
@@ -1098,6 +1097,8 @@ void Game::SetupConfigs()
 	c_LeftShoulderHolsterOffset = config.RegisterVector3("LeftShoulderHolsterOffset", "The (foward, left, up) Offset of the left shoulder holster relative to the headset's location", Vector3(-0.15f, 0.25f, -0.25f));
 	c_RightShoulderHolsterActivationDistance = config.RegisterFloat("RightShoulderHolsterDistance", "The 'size' of the right shoulder holster. This is the distance that the dominant hand needs to be from the holster to change weapons (<0 to disable)", 0.3f);
 	c_RightShoulderHolsterOffset = config.RegisterVector3("RightShoulderHolsterOffset", "The (foward, left, up) Offset of the right shoulder holster relative to the headset's location", Vector3(-0.15f, -0.25f, -0.25f));
+	// Manual reload settings
+	c_DisableEmptyMagazineAutoReload = config.RegisterBool("DisableEmptyMagazineAutoReload", "When enabled, the game will not automatically reload when the magazine is empty. Press Reload to reload manually", false);
 	// Misc settings
 	c_ShowRoomCentre = config.RegisterBool("ShowRoomCentre", "Draw an indicator at your feet to show where the player character is actually positioned", true);
 	c_d3d9Path = config.RegisterString("CustomD3D9Path", "If set first try to load d3d9.dll from the specified path instead of from system32", "");
