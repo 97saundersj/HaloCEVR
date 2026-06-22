@@ -70,6 +70,8 @@ protected:
 	Matrix4 GetDetachedMagazineOrientation() const;
 	void ApplyMatrixToTransform(const class Matrix4& matrix, struct Transform& outTransform) const;
 	int ResolveMagazineRootBoneIndex() const;
+	Vector3 GetOffHandWorldPosition() const;
+	Vector3 GetMagazineGripWorldOffset() const;
 	void LogViewModelBoneHierarchy(struct AssetData_ModelAnimations* animationData, const char* weaponAssetPath) const;
 	void LogViewModelBoneHierarchyNode(struct Bone* boneArray, int numBones, int boneIndex, int depth) const;
 

@@ -251,6 +251,7 @@ public:
 	Vector3Property* c_BeltMagazineOffset = nullptr;
 	FloatProperty* c_BeltMagazineGrabDistance = nullptr;
 	FloatProperty* c_BeltMagazineInsertDistance = nullptr;
+	Vector3Property* c_MagazineGripControllerOffset = nullptr;
 	BoolProperty* c_ShowRoomCentre = nullptr;
 	BoolProperty* c_ToggleGrip = nullptr;
 	FloatProperty* c_TwoHandDistance = nullptr;

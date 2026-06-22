@@ -161,6 +161,30 @@ Vector3 WeaponHandler::GetMagazineSocketWorldPosition() const
 	return cachedViewModel.magazineSocketPosition;
 }
 
+Vector3 WeaponHandler::GetOffHandWorldPosition() const
+{
+	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
+	Matrix4 offHandTransform = Game::instance.GetVR()->GetControllerTransform(offHand, true);
+	Vector3 handPos = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
+	handPos *= Game::instance.MetresToWorld(1.0f);
+	handPos += Helpers::GetCamera().position;
+	return handPos;
+}
+
+Vector3 WeaponHandler::GetMagazineGripWorldOffset() const
+{
+	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
+	Matrix4 offHandTransform = Game::instance.GetVR()->GetControllerTransform(offHand, true);
+	const Vector3 controllerOrigin = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
+
+	Matrix4 handRotation = offHandTransform;
+	handRotation.translate(-controllerOrigin);
+
+	Vector3 worldOffset = handRotation * Game::instance.c_MagazineGripControllerOffset->Value();
+	worldOffset *= Game::instance.MetresToWorld(1.0f);
+	return worldOffset;
+}
+
 void WeaponHandler::RelocateMagazineBones(Transform* outBoneTransforms, const Vector3& targetRootPos, const Matrix4& targetRootOrientation)
 {
 	const int rootIndex = ResolveMagazineRootBoneIndex();
@@ -262,21 +286,9 @@ void WeaponHandler::UpdatePhysicalMagazinePlacement(Transform* outBoneTransforms
 		}
 	}
 
-	Vector3 targetPos;
-	if (Game::instance.bMagazineGrabbed)
-	{
-		const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
-		Matrix4 offHandTransform = Game::instance.GetVR()->GetControllerTransform(offHand, true);
-		// Offset from controller origin so the mag sits in the grip, not the palm centre.
-		const Vector3 magazineGripOffset(0.08f, -0.03f, -0.07f);
-		targetPos = offHandTransform * magazineGripOffset;
-		targetPos *= Game::instance.MetresToWorld(1.0f);
-		targetPos += Helpers::GetCamera().position;
-	}
-	else
-	{
-		targetPos = GetBeltMagazineWorldPosition();
-	}
+	const Vector3 targetPos = Game::instance.bMagazineGrabbed
+		? GetOffHandWorldPosition() + GetMagazineGripWorldOffset()
+		: GetBeltMagazineWorldPosition();
 
 	RelocateMagazineBones(outBoneTransforms, targetPos, GetDetachedMagazineOrientation());
 }
