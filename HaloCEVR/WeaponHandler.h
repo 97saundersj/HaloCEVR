@@ -39,6 +39,14 @@ public:
 
 	bool IsSniperScope() const;
 
+	bool IsLocalMagazineEmpty() const;
+	bool HasMagazineBones() const;
+	bool ShouldShowBeltMagazine() const;
+	bool ShouldUsePhysicalMagazineReload() const;
+	bool SupportsPhysicalMagazineReload() const;
+	Vector3 GetBeltMagazineWorldPosition() const;
+	Vector3 GetMagazineSocketWorldPosition() const;
+
 	Vector3 localOffset;
 	Vector3 localRotation;
 
@@ -54,6 +62,16 @@ protected:
 	inline void HandleWeaponHaptics() const;
 
 	inline void TransformToMatrix4(struct Transform& inTransform, class Matrix4& outMatrix) const;
+
+	static bool IsMagazineBoneName(const char* name);
+	void MarkMagazineBone(int boneIndex);
+	void UpdatePhysicalMagazinePlacement(struct Transform* outBoneTransforms);
+	void RelocateMagazineBones(struct Transform* outBoneTransforms, const Vector3& targetRootPos, const class Matrix4& targetRootOrientation);
+	Matrix4 GetDetachedMagazineOrientation() const;
+	void ApplyMatrixToTransform(const class Matrix4& matrix, struct Transform& outTransform) const;
+	int ResolveMagazineRootBoneIndex() const;
+	void LogViewModelBoneHierarchy(struct AssetData_ModelAnimations* animationData, const char* weaponAssetPath) const;
+	void LogViewModelBoneHierarchyNode(struct Bone* boneArray, int numBones, int boneIndex, int depth) const;
 
 	inline Vector3 GetScopeLocation(WeaponType Type) const;
 
@@ -73,7 +91,11 @@ protected:
 		Matrix3 fireRotation;
 		WeaponType weaponType = WeaponType::Unknown;
 		bool IsShooting = false;
-		
+		bool magazineHideBones[64]{};
+		bool bHasMagazineBones = false;
+		int magazineRootBoneIndex = -1;
+		Vector3 magazineSocketPosition{};
+
 	} cachedViewModel;
 
 	UnitDynamicObject* weaponFiredPlayer = nullptr;

@@ -62,6 +62,13 @@ public:
 	void ReloadStart(HaloID param1, short param2, bool param3);
 	void ReloadEnd(short param1, HaloID param2);
 	bool ShouldBlockAutoReloadStart() const;
+	void TriggerWeaponReload();
+	bool IsLocalMagazineEmpty() const;
+	bool HasMagazineBones() const;
+	bool SupportsPhysicalMagazineReload() const;
+	bool ShouldShowBeltMagazine() const;
+	Vector3 GetBeltMagazineWorldPosition() const;
+	Vector3 GetMagazineSocketWorldPosition() const;
 
 	void UpdateInputs();
 	void CalculateSmoothedInput();
@@ -101,6 +108,8 @@ public:
 	Config config;
 	bool bIsFiring = false;
 	bool bIsReloading = false;
+	bool bMagazineEjected = false;  // True when player pressed reload to eject empty mag
+	bool bMagazineGrabbed = false;  // True when player is holding the ejected mag
 
 	InGameRenderer inGameRenderer;
 	InGameRenderer scopeRenderer;
@@ -239,6 +248,9 @@ public:
 	FloatProperty* c_RightHandMeleeSwingSpeed = nullptr;
 	FloatProperty* c_CrouchHeight = nullptr;
 	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
+	Vector3Property* c_BeltMagazineOffset = nullptr;
+	FloatProperty* c_BeltMagazineGrabDistance = nullptr;
+	FloatProperty* c_BeltMagazineInsertDistance = nullptr;
 	BoolProperty* c_ShowRoomCentre = nullptr;
 	BoolProperty* c_ToggleGrip = nullptr;
 	FloatProperty* c_TwoHandDistance = nullptr;

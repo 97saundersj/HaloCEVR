@@ -16,6 +16,7 @@ public:
 	void CalculateSmoothedInput();
 
 	bool ShouldBlockAutoReloadStart() const;
+	void UpdatePhysicalMagazineReload();
 
 	Vector3 smoothedPosition = Vector3(0.0f, 0.0f, 0.0f);
 

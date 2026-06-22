@@ -18,8 +18,19 @@ bool InputHandler::ShouldBlockAutoReloadStart() const
 		return false;
 	}
 
-	IVR* vr = Game::instance.GetVR();
-	return !vr->GetBoolInput(Reload);
+	if (Game::instance.bUse3DOFAiming)
+	{
+		IVR* vr = Game::instance.GetVR();
+		return !vr->GetBoolInput(Reload);
+	}
+
+	if (!Game::instance.SupportsPhysicalMagazineReload())
+	{
+		IVR* vr = Game::instance.GetVR();
+		return !vr->GetBoolInput(Reload);
+	}
+
+	return true;
 }
 
 void InputHandler::RegisterInputs()
@@ -257,6 +268,8 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		input.ki.dwFlags |= KEYEVENTF_KEYUP;
 		SendInput(1, &input, sizeof(INPUT));
 	}
+
+	UpdatePhysicalMagazineReload();
 
 	UpdateHandsProximity();
 
@@ -509,6 +522,80 @@ unsigned char InputHandler::UpdateCrouch()
 	return 0;
 }
 
+void InputHandler::UpdatePhysicalMagazineReload()
+{
+	// Physical magazine reload disabled or in 3DOF mode
+	if (!Game::instance.c_DisableEmptyMagazineAutoReload->Value()
+		|| Game::instance.bUse3DOFAiming
+		|| !Game::instance.HasMagazineBones())
+	{
+		Game::instance.bMagazineEjected = false;
+		Game::instance.bMagazineGrabbed = false;
+		return;
+	}
+
+	// Reset states when reloading
+	if (Game::instance.bIsReloading)
+	{
+		Game::instance.bMagazineEjected = false;
+		Game::instance.bMagazineGrabbed = false;
+		return;
+	}
+
+	IVR* vr = Game::instance.GetVR();
+	bool bReloadChanged;
+	const bool reloadPressed = vr->GetBoolInput(Reload, bReloadChanged);
+
+	// Step 1: Press reload button when magazine is empty to eject it to the belt
+	if (!Game::instance.bMagazineEjected)
+	{
+		if (Game::instance.IsLocalMagazineEmpty() && reloadPressed && bReloadChanged)
+		{
+			Game::instance.bMagazineEjected = true;
+		}
+		return;
+	}
+
+	// Step 2: Magazine is ejected - handle grab and insert
+	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
+	Matrix4 offHandTransform = vr->GetControllerTransform(offHand, true);
+	Vector3 offHandPos = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
+	offHandPos *= Game::instance.MetresToWorld(1.0f);
+	offHandPos += Helpers::GetCamera().position;
+
+	const Vector3 beltPos = Game::instance.GetBeltMagazineWorldPosition();
+	const Vector3 socketPos = Game::instance.GetMagazineSocketWorldPosition();
+	const float grabDistance = Game::instance.c_BeltMagazineGrabDistance->Value();
+	const float insertDistance = Game::instance.c_BeltMagazineInsertDistance->Value();
+	const float grabDistanceSqr = grabDistance * grabDistance;
+	const float insertDistanceSqr = insertDistance * insertDistance;
+
+	const bool offHandNearBelt = (offHandPos - beltPos).lengthSqr() < grabDistanceSqr;
+	const bool offHandNearSocket = (offHandPos - socketPos).lengthSqr() < insertDistanceSqr;
+	const bool gripHeld = vr->GetBoolInput(TwoHandGrip);
+
+	if (!Game::instance.bMagazineGrabbed)
+	{
+		// Grab magazine from belt
+		if (gripHeld && offHandNearBelt)
+		{
+			Game::instance.bMagazineGrabbed = true;
+		}
+	}
+	else if (offHandNearSocket)
+	{
+		// Insert magazine into weapon
+		Game::instance.TriggerWeaponReload();
+		Game::instance.bMagazineEjected = false;
+		Game::instance.bMagazineGrabbed = false;
+	}
+	else if (!gripHeld)
+	{
+		// Released grip - drop magazine back to belt
+		Game::instance.bMagazineGrabbed = false;
+	}
+}
+
 void InputHandler::SetMousePosition(int& x, int& y)
 {
 	Vector2 mousePos = Game::instance.GetVR()->GetMousePos();
@@ -651,6 +738,15 @@ void InputHandler::UpdateHandsProximity()
 
 void InputHandler::CheckSwapWeaponHand()
 {
+	// Off-hand grip is shared with magazine grab; don't swap weapon hands during physical reload.
+	if (Game::instance.c_DisableEmptyMagazineAutoReload->Value()
+		&& (Game::instance.bMagazineEjected
+			|| Game::instance.bMagazineGrabbed
+			|| Game::instance.bIsReloading))
+	{
+		return;
+	}
+
 	IVR* vr = Game::instance.GetVR();
 
 	bool bWeaponHandChanged;
@@ -685,6 +781,14 @@ void InputHandler::UpdateTwoHandedHold(float handDistance, bool handsWithinSwapW
 {
 	// Two hand aim is disabled when 3DOF is enabled.
 	if (Game::instance.bUse3DOFAiming) {
+		Game::instance.bUseTwoHandAim = false;
+		return;
+	}
+
+	// Off-hand grip is used to grab the ejected magazine during physical reload.
+	if (Game::instance.c_DisableEmptyMagazineAutoReload->Value()
+		&& (Game::instance.bMagazineEjected || Game::instance.bMagazineGrabbed))
+	{
 		Game::instance.bUseTwoHandAim = false;
 		return;
 	}

@@ -864,6 +864,48 @@ bool Game::ShouldBlockAutoReloadStart() const
 	return inputHandler.ShouldBlockAutoReloadStart();
 }
 
+void Game::TriggerWeaponReload()
+{
+	BaseDynamicObject* player = Helpers::GetLocalPlayer();
+	if (!player || player->weapon.id == 0xffff)
+	{
+		return;
+	}
+
+	Hooks::CallReloadStart(player->weapon, 0, true);
+	ReloadStart(player->weapon, 0, true);
+}
+
+bool Game::IsLocalMagazineEmpty() const
+{
+	return weaponHandler.IsLocalMagazineEmpty();
+}
+
+bool Game::HasMagazineBones() const
+{
+	return weaponHandler.HasMagazineBones();
+}
+
+bool Game::SupportsPhysicalMagazineReload() const
+{
+	return weaponHandler.SupportsPhysicalMagazineReload();
+}
+
+bool Game::ShouldShowBeltMagazine() const
+{
+	return weaponHandler.ShouldShowBeltMagazine();
+}
+
+Vector3 Game::GetBeltMagazineWorldPosition() const
+{
+	return weaponHandler.GetBeltMagazineWorldPosition();
+}
+
+Vector3 Game::GetMagazineSocketWorldPosition() const
+{
+	return weaponHandler.GetMagazineSocketWorldPosition();
+}
+
 void Game::ReloadStart(HaloID param1, short param2, bool param3)
 {
 	VR_PROFILE_SCOPE(Game_ReloadStart);
@@ -1042,7 +1084,7 @@ void Game::SetupConfigs()
 	VR_PROFILE_SCOPE(Game_SetupConfigs);
 
 	// Window settings
-	c_ShowConsole = config.RegisterBool("ShowConsole", "Create a console window at launch for debugging purposes", false);
+	c_ShowConsole = config.RegisterBool("ShowConsole", "Create a console window at launch for debugging purposes", true);
 	c_DrawMirror = config.RegisterBool("DrawMirror", "Update the desktop window display to show the current game view, rather than leaving it on the splash screen", true);
 	c_MirrorEye = config.RegisterInt("MirrorEye", "Index of the eye to use for the mirror view  (0 = left, 1 = right)", 0);
 	// UI settings
@@ -1098,7 +1140,10 @@ void Game::SetupConfigs()
 	c_RightShoulderHolsterActivationDistance = config.RegisterFloat("RightShoulderHolsterDistance", "The 'size' of the right shoulder holster. This is the distance that the dominant hand needs to be from the holster to change weapons (<0 to disable)", 0.3f);
 	c_RightShoulderHolsterOffset = config.RegisterVector3("RightShoulderHolsterOffset", "The (foward, left, up) Offset of the right shoulder holster relative to the headset's location", Vector3(-0.15f, -0.25f, -0.25f));
 	// Manual reload settings
-	c_DisableEmptyMagazineAutoReload = config.RegisterBool("DisableEmptyMagazineAutoReload", "When enabled, the game will not automatically reload when the magazine is empty. Press Reload to reload manually", false);
+	c_DisableEmptyMagazineAutoReload = config.RegisterBool("DisableEmptyMagazineAutoReload", "When enabled, auto-reload is disabled and you must grab the belt magazine and insert it into the weapon. The belt magazine is always shown when empty in 6DOF mode", false);
+	c_BeltMagazineOffset = config.RegisterVector3("BeltMagazineOffset", "The (forward, left, up) offset of the spare magazine on your belt relative to the headset", Vector3(0.1f, 0.38f, -0.32f));
+	c_BeltMagazineGrabDistance = config.RegisterFloat("BeltMagazineGrabDistance", "How close the off-hand must be to the belt magazine to grab it (metres)", 0.08f);
+	c_BeltMagazineInsertDistance = config.RegisterFloat("BeltMagazineInsertDistance", "How close the off-hand must be to the weapon magazine socket to insert and reload (metres)", 0.06f);
 	// Misc settings
 	c_ShowRoomCentre = config.RegisterBool("ShowRoomCentre", "Draw an indicator at your feet to show where the player character is actually positioned", true);
 	c_d3d9Path = config.RegisterString("CustomD3D9Path", "If set first try to load d3d9.dll from the specified path instead of from system32", "");

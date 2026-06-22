@@ -7,6 +7,8 @@
 #include "Game.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <string>
 
 // This is a working decomp of the game's original logic for updating the view model's skeleton
 // Only kept here for reference when working on the replacement function below
@@ -55,6 +57,228 @@ static void ReferenceUpdateViewModelImpl(HaloID& id, Vector3* pos, Vector3* faci
 
 		} while (i != lastIndex);
 	}
+}
+
+bool WeaponHandler::IsMagazineBoneName(const char* name)
+{
+	if (!name || !name[0])
+	{
+		return false;
+	}
+
+	// Halo CE first-person weapons use a dedicated "frame magazine" node.
+	// Avoid substring matching — it incorrectly includes siblings linked in the
+	// bone tree (e.g. trigger, charging handle, display) via MarkMagazineSubtree.
+	return _stricmp(name, "frame magazine") == 0
+		|| _stricmp(name, "magazine") == 0
+		|| _stricmp(name, "clip") == 0;
+}
+
+void WeaponHandler::MarkMagazineBone(int boneIndex)
+{
+	if (boneIndex >= 0 && boneIndex < 64)
+	{
+		cachedViewModel.magazineHideBones[boneIndex] = true;
+	}
+}
+
+bool WeaponHandler::IsLocalMagazineEmpty() const
+{
+	BaseDynamicObject* player = Helpers::GetLocalPlayer();
+	if (!player || player->weapon.id == 0xffff)
+	{
+		return false;
+	}
+
+	WeaponDynamicObject* weaponObject = static_cast<WeaponDynamicObject*>(Helpers::GetDynamicObject(player->weapon));
+	if (!weaponObject)
+	{
+		return false;
+	}
+
+	return weaponObject->weaponData[0].ammo == 0;
+}
+
+bool WeaponHandler::HasMagazineBones() const
+{
+	return cachedViewModel.bHasMagazineBones;
+}
+
+bool WeaponHandler::ShouldShowBeltMagazine() const
+{
+	return HasMagazineBones()
+		&& !Game::instance.bUse3DOFAiming
+		&& Game::instance.bMagazineEjected  // Only show when player has ejected the mag
+		&& !Game::instance.bIsReloading;
+}
+
+bool WeaponHandler::ShouldUsePhysicalMagazineReload() const
+{
+	return ShouldShowBeltMagazine()
+		&& Game::instance.c_DisableEmptyMagazineAutoReload->Value();
+}
+
+bool WeaponHandler::SupportsPhysicalMagazineReload() const
+{
+	return HasMagazineBones();
+}
+
+int WeaponHandler::ResolveMagazineRootBoneIndex() const
+{
+	if (cachedViewModel.magazineRootBoneIndex >= 0)
+	{
+		return cachedViewModel.magazineRootBoneIndex;
+	}
+
+	for (int i = 0; i < 64; i++)
+	{
+		if (cachedViewModel.magazineHideBones[i])
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+Vector3 WeaponHandler::GetBeltMagazineWorldPosition() const
+{
+	// Camera-relative placement (same space as the room-centre marker — HMD offsets were unreliable).
+	Vector3 position = Helpers::GetCamera().position;
+	const float scale = Game::instance.MetresToWorld(1.0f);
+
+	position.z -= 0.62f;
+	position.z += scale * 1.0f;
+	position.x += scale * 0.25f;
+
+	const float hipOffset = scale * 0.30f;
+	position.y += Game::instance.bLeftHanded ? -hipOffset : hipOffset;
+	return position;
+}
+
+Vector3 WeaponHandler::GetMagazineSocketWorldPosition() const
+{
+	return cachedViewModel.magazineSocketPosition;
+}
+
+void WeaponHandler::RelocateMagazineBones(Transform* outBoneTransforms, const Vector3& targetRootPos, const Matrix4& targetRootOrientation)
+{
+	const int rootIndex = ResolveMagazineRootBoneIndex();
+	if (rootIndex < 0)
+	{
+		return;
+	}
+
+	Matrix4 originalRootMatrix;
+	TransformToMatrix4(outBoneTransforms[rootIndex], originalRootMatrix);
+
+	Matrix4 originalRootInverse = originalRootMatrix;
+	originalRootInverse.invertAffine();
+
+	Matrix4 newRootMatrix = targetRootOrientation;
+	newRootMatrix.setColumn(3, targetRootPos);
+
+	for (int i = 0; i < 64; i++)
+	{
+		if (!cachedViewModel.magazineHideBones[i])
+		{
+			continue;
+		}
+
+		Matrix4 originalBoneMatrix;
+		TransformToMatrix4(outBoneTransforms[i], originalBoneMatrix);
+
+		Matrix4 relativeMatrix = originalRootInverse * originalBoneMatrix;
+		Matrix4 newBoneMatrix = newRootMatrix * relativeMatrix;
+
+		ApplyMatrixToTransform(newBoneMatrix, outBoneTransforms[i]);
+
+		if (outBoneTransforms[i].scale < 0.01f)
+		{
+			outBoneTransforms[i].scale = 1.0f;
+		}
+	}
+}
+
+Matrix4 WeaponHandler::GetDetachedMagazineOrientation() const
+{
+	if (Game::instance.bMagazineGrabbed)
+	{
+		const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
+		Matrix4 controllerTransform = Game::instance.GetVR()->GetControllerTransform(offHand, true);
+
+		Matrix4 orientation;
+		orientation.identity();
+		for (int x = 0; x < 3; x++)
+		{
+			for (int y = 0; y < 3; y++)
+			{
+				const_cast<float*>(orientation.get())[x + y * 4] = controllerTransform.get()[x + y * 4];
+			}
+		}
+
+		return orientation;
+	}
+
+	// Belt orientation: follow body yaw only so the mag doesn't tilt with gun aim.
+	Matrix4 headTransform = Game::instance.GetVR()->GetHMDTransform(true);
+	Vector3 forward = headTransform.getForwardAxis();
+	forward.z = 0.0f;
+	if (forward.lengthSqr() < 0.0001f)
+	{
+		forward = Vector3(1.0f, 0.0f, 0.0f);
+	}
+	else
+	{
+		forward.normalize();
+	}
+
+	const Vector3 up(0.0f, 0.0f, 1.0f);
+	Transform orientationTransform;
+	Helpers::MakeTransformFromXZ(&forward, &up, &orientationTransform);
+
+	Matrix4 orientation;
+	TransformToMatrix4(orientationTransform, orientation);
+	return orientation;
+}
+
+void WeaponHandler::UpdatePhysicalMagazinePlacement(Transform* outBoneTransforms)
+{
+	if (!ShouldShowBeltMagazine())
+	{
+		return;
+	}
+
+	if (cachedViewModel.magazineRootBoneIndex >= 0)
+	{
+		cachedViewModel.magazineSocketPosition = outBoneTransforms[cachedViewModel.magazineRootBoneIndex].translation;
+	}
+	else
+	{
+		const int rootIndex = ResolveMagazineRootBoneIndex();
+		if (rootIndex >= 0)
+		{
+			cachedViewModel.magazineSocketPosition = outBoneTransforms[rootIndex].translation;
+		}
+	}
+
+	Vector3 targetPos;
+	if (Game::instance.bMagazineGrabbed)
+	{
+		const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
+		Matrix4 offHandTransform = Game::instance.GetVR()->GetControllerTransform(offHand, true);
+		// Offset from controller origin so the mag sits in the grip, not the palm centre.
+		const Vector3 magazineGripOffset(0.08f, -0.03f, -0.07f);
+		targetPos = offHandTransform * magazineGripOffset;
+		targetPos *= Game::instance.MetresToWorld(1.0f);
+		targetPos += Helpers::GetCamera().position;
+	}
+	else
+	{
+		targetPos = GetBeltMagazineWorldPosition();
+	}
+
+	RelocateMagazineBones(outBoneTransforms, targetPos, GetDetachedMagazineOrientation());
 }
 
 void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, TransformQuat* boneTransforms, Transform* outBoneTransforms)
@@ -183,6 +407,8 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 	if (bShouldUpdateCache)
 	{
 		UpdateCache(id, animationData);
+		Game::instance.bMagazineEjected = false;
+		Game::instance.bMagazineGrabbed = false;
 	}
 
 	Transform unmodifiedHandTransform;
@@ -414,6 +640,8 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 
 		} while (i != lastIndex);
 	}
+
+	UpdatePhysicalMagazinePlacement(outBoneTransforms);
 }
 
 inline void WeaponHandler::CalculateBoneTransform(int boneIndex, Bone* boneArray, Transform& root, TransformQuat* boneTransforms, Transform& outTransform) const
@@ -509,6 +737,81 @@ void WeaponHandler::MoveBoneToTransform(int boneIndex, const Matrix4& newTransfo
 	realTransforms[boneIndex] = outBoneTransforms[boneIndex]; // Re-cache value to use updated position
 }
 
+void WeaponHandler::LogViewModelBoneHierarchyNode(Bone* boneArray, int numBones, int boneIndex, int depth) const
+{
+	if (boneIndex < 0 || boneIndex >= numBones)
+	{
+		return;
+	}
+
+	std::string indent(static_cast<size_t>(depth) * 2, ' ');
+	const Bone& bone = boneArray[boneIndex];
+
+	Logger::log << "[WeaponHandler] " << indent << "[" << boneIndex << "] " << bone.BoneName;
+	if (boneIndex < 64 && cachedViewModel.magazineHideBones[boneIndex])
+	{
+		Logger::log << " [magazine]";
+	}
+	Logger::log << std::endl;
+
+	LogViewModelBoneHierarchyNode(boneArray, numBones, bone.LeftLeaf, depth + 1);
+	LogViewModelBoneHierarchyNode(boneArray, numBones, bone.RightLeaf, depth + 1);
+}
+
+void WeaponHandler::LogViewModelBoneHierarchy(AssetData_ModelAnimations* animationData, const char* weaponAssetPath) const
+{
+	if (!animationData || !animationData->BoneArray)
+	{
+		return;
+	}
+
+	Bone* boneArray = animationData->BoneArray;
+	const int numBones = animationData->NumBones;
+
+	Logger::log << "[WeaponHandler] === View model bone hierarchy";
+	if (weaponAssetPath && weaponAssetPath[0])
+	{
+		Logger::log << " weapon=" << weaponAssetPath;
+	}
+	Logger::log << " ===" << std::endl;
+	Logger::log << "[WeaponHandler] Bone count: " << numBones << std::endl;
+
+	for (int i = 0; i < numBones; i++)
+	{
+		const Bone& bone = boneArray[i];
+
+		auto boneNameOrNone = [&](int index) -> const char*
+		{
+			if (index >= 0 && index < numBones)
+			{
+				return boneArray[index].BoneName;
+			}
+
+			return "none";
+		};
+
+		Logger::log << "[WeaponHandler] Bone[" << i << "] \"" << bone.BoneName << "\""
+			<< " parent=" << bone.Parent << " (\"" << boneNameOrNone(bone.Parent) << "\")"
+			<< " left=" << bone.LeftLeaf << " (\"" << boneNameOrNone(bone.LeftLeaf) << "\")"
+			<< " right=" << bone.RightLeaf << " (\"" << boneNameOrNone(bone.RightLeaf) << "\")";
+
+		if (i < 64 && cachedViewModel.magazineHideBones[i])
+		{
+			Logger::log << " [magazine]";
+		}
+
+		Logger::log << std::endl;
+	}
+
+	if (numBones > 0)
+	{
+		Logger::log << "[WeaponHandler] -- Tree from bone 0 --" << std::endl;
+		LogViewModelBoneHierarchyNode(boneArray, numBones, 0, 0);
+	}
+
+	Logger::log << "[WeaponHandler] === End bone hierarchy ===" << std::endl;
+}
+
 void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animationData)
 {
 #if DRAW_DEBUG_AIM
@@ -519,6 +822,9 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	cachedViewModel.rightWristIndex = -1;
 	cachedViewModel.gunIndex = -1;
 	cachedViewModel.displayIndex = -1;
+	cachedViewModel.bHasMagazineBones = false;
+	cachedViewModel.magazineRootBoneIndex = -1;
+	memset(cachedViewModel.magazineHideBones, 0, sizeof(cachedViewModel.magazineHideBones));
 
 	Bone* boneArray = animationData->BoneArray;
 
@@ -567,6 +873,56 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 			Logger::log << "[UpdateCache] Skipped Bone " << CurrentBone.BoneName << std::endl;
 		}
 #endif
+	}
+
+	for (int i = 0; i < animationData->NumBones && i < 64; i++)
+	{
+		if (IsMagazineBoneName(boneArray[i].BoneName))
+		{
+			MarkMagazineBone(i);
+			cachedViewModel.bHasMagazineBones = true;
+
+			if (_stricmp(boneArray[i].BoneName, "frame magazine") == 0)
+			{
+				cachedViewModel.magazineRootBoneIndex = i;
+			}
+			else if (cachedViewModel.magazineRootBoneIndex < 0)
+			{
+				cachedViewModel.magazineRootBoneIndex = i;
+			}
+
+#if DRAW_DEBUG_AIM
+			Logger::log << "[UpdateCache] Found magazine bone " << boneArray[i].BoneName << " @ " << i << std::endl;
+#endif
+		}
+	}
+
+	if (cachedViewModel.bHasMagazineBones)
+	{
+		const char* rootName = cachedViewModel.magazineRootBoneIndex >= 0
+			? boneArray[cachedViewModel.magazineRootBoneIndex].BoneName
+			: "unknown";
+		Logger::log << "[WeaponHandler] Magazine bone cached: index "
+			<< cachedViewModel.magazineRootBoneIndex << " (\"" << rootName << "\")" << std::endl;
+	}
+
+	{
+		std::string weaponAssetPath;
+		BaseDynamicObject* player = Helpers::GetLocalPlayer();
+		if (player)
+		{
+			BaseDynamicObject* weaponObj = Helpers::GetDynamicObject(player->weapon);
+			if (weaponObj)
+			{
+				Asset_Weapon* weapon = Helpers::GetTypedAsset<Asset_Weapon>(weaponObj->tagID);
+				if (weapon)
+				{
+					weaponAssetPath = weapon->WeaponAsset;
+				}
+			}
+		}
+
+		LogViewModelBoneHierarchy(animationData, weaponAssetPath.empty() ? nullptr : weaponAssetPath.c_str());
 	}
 
 	cachedViewModel.fireOffset = Vector3();
@@ -735,6 +1091,18 @@ inline void WeaponHandler::TransformToMatrix4(Transform& inTransform, Matrix4& o
 		}
 	}
 	outMatrix.setColumn(3, inTransform.translation);
+}
+
+inline void WeaponHandler::ApplyMatrixToTransform(const Matrix4& matrix, Transform& outTransform) const
+{
+	outTransform.translation = matrix * Vector3(0.0f, 0.0f, 0.0f);
+	for (int x = 0; x < 3; x++)
+	{
+		for (int y = 0; y < 3; y++)
+		{
+			outTransform.rotation[x + y * 3] = matrix.get()[x + y * 4];
+		}
+	}
 }
 
 Vector3 WeaponHandler::GetScopeLocation(WeaponType type) const

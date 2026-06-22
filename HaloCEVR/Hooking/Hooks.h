@@ -44,6 +44,8 @@ public:
 	DEFINE_HOOK_FULL(ReloadStart, void __cdecl, HaloID param1, short param2, bool param3);
 	DEFINE_HOOK(ReloadEnd);
 
+	static void CallReloadStart(HaloID param1, short param2, bool param3);
+
 	// All direct patches go here:
 	static void P_FixTabOut();
 	static void P_RemoveCutsceneFPSCap();

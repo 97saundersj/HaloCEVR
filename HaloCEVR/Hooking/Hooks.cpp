@@ -906,9 +906,14 @@ void Hooks::H_ReloadStart(HaloID param1, short param2, bool param3)
 		return;
 	}
 
-	ReloadStart.Original(param1, param2, param3);
+	CallReloadStart(param1, param2, param3);
 
 	Game::instance.ReloadStart(param1, param2, param3);
+}
+
+void Hooks::CallReloadStart(HaloID param1, short param2, bool param3)
+{
+	ReloadStart.Original(param1, param2, param3);
 }
 
 void __declspec(naked) Hooks::H_ReloadEnd()
