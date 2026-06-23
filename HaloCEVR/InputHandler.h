@@ -2,6 +2,8 @@
 #include "VR/IVR.h"
 #include <chrono>
 
+struct WeaponDynamicObject;
+
 class InputHandler
 {
 public:
@@ -17,6 +19,8 @@ public:
 
 	bool ShouldBlockAutoReloadStart() const;
 	void UpdatePhysicalMagazineReload();
+	void ResetPhysicalReloadState();
+	void ApplyPhysicalReloadAnimPin();
 
 	Vector3 smoothedPosition = Vector3(0.0f, 0.0f, 0.0f);
 
@@ -36,6 +40,12 @@ protected:
 	void UpdateHandsProximity();
 	void CheckSwapWeaponHand();
 	void UpdateTwoHandedHold(float handDistance, bool handsWithinSwapWeaponDistance);
+
+	void UpdateReloadAnimationPause();
+	void HandlePhysicalMagazineGrabInsert();
+	void BeginPhysicalReload();
+	void ResumePhysicalReloadAnimation();
+	static WeaponDynamicObject* GetLocalWeaponObject();
 
 	char lastSnapState = 0;
 	unsigned char mouseDownState = 0;

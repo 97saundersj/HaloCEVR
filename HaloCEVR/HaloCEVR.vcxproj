@@ -233,6 +233,7 @@
   <ItemGroup>
     <ClCompile Include="Helpers\CmdLineArgs.cpp" />
     <ClCompile Include="Helpers\Cutscene.cpp" />
+    <ClCompile Include="Helpers\FirstPersonAnim.cpp" />
     <ClCompile Include="Helpers\Version.cpp" />
     <ClCompile Include="InGameRenderer.cpp" />
     <ClCompile Include="dllmain.cpp" />

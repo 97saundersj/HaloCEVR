@@ -108,8 +108,17 @@ bool WeaponHandler::ShouldShowBeltMagazine() const
 {
 	return HasMagazineBones()
 		&& !Game::instance.bUse3DOFAiming
-		&& Game::instance.bMagazineEjected  // Only show when player has ejected the mag
-		&& !Game::instance.bIsReloading;
+		&& Game::instance.bMagazineEjected;
+}
+
+int WeaponHandler::GetReloadEmptyAnimIndex() const
+{
+	return cachedViewModel.reloadEmptyAnimIndex;
+}
+
+int WeaponHandler::GetReloadExitEmptyAnimIndex() const
+{
+	return cachedViewModel.reloadExitEmptyAnimIndex;
 }
 
 bool WeaponHandler::ShouldUsePhysicalMagazineReload() const
@@ -266,8 +275,13 @@ Matrix4 WeaponHandler::GetDetachedMagazineOrientation() const
 	return orientation;
 }
 
-void WeaponHandler::UpdatePhysicalMagazinePlacement(Transform* outBoneTransforms)
+void WeaponHandler::UpdatePhysicalMagazinePlacement(const HaloID& id, Transform* outBoneTransforms)
 {
+	if (cachedViewModel.currentAsset != id || cachedViewModel.rightWristIndex < 0)
+	{
+		return;
+	}
+
 	if (!ShouldShowBeltMagazine())
 	{
 		return;
@@ -291,6 +305,35 @@ void WeaponHandler::UpdatePhysicalMagazinePlacement(Transform* outBoneTransforms
 		: GetBeltMagazineWorldPosition();
 
 	RelocateMagazineBones(outBoneTransforms, targetPos, GetDetachedMagazineOrientation());
+}
+
+void WeaponHandler::ClearPhysicalReloadBoneSnapshot()
+{
+	bHasPausedBoneSnapshot = false;
+}
+
+// Physical reload: freeze FP weapon pose at magazine eject by snapshotting/restoring the
+// TransformQuat buffer passed into SetViewModelPosition for the local weapon asset only.
+// See docs/skeleton-pipeline.md — SetViewModelPosition runs once per skeleton pass (weapon,
+// third-person body, etc.); pinning without an asset gate corrupts non-weapon bones.
+void WeaponHandler::ApplyPhysicalReloadBonePin(const HaloID& id, TransformQuat* boneTransforms)
+{
+	if (cachedViewModel.currentAsset != id || cachedViewModel.rightWristIndex < 0)
+	{
+		return;
+	}
+
+	const EPhysicalReloadPhase phase = Game::instance.physicalReloadPhase;
+
+	if (phase == EPhysicalReloadPhase::PlayingEject)
+	{
+		memcpy(pausedBoneTransforms, boneTransforms, sizeof(pausedBoneTransforms));
+		bHasPausedBoneSnapshot = true;
+	}
+	else if (phase == EPhysicalReloadPhase::PausedAtEject && bHasPausedBoneSnapshot)
+	{
+		memcpy(boneTransforms, pausedBoneTransforms, sizeof(pausedBoneTransforms));
+	}
 }
 
 void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, TransformQuat* boneTransforms, Transform* outBoneTransforms)
@@ -402,7 +445,7 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 	}
 
 	Asset_ModelAnimations* viewModel = Helpers::GetTypedAsset<Asset_ModelAnimations>(id);
-	if (!viewModel)
+	if (!viewModel || !viewModel->Data)
 	{
 		Logger::log << "[UpdateViewModel] Can't get view model asset" << std::endl;
 		return;
@@ -416,12 +459,17 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 	root.translation = *pos;
 
 	const bool bShouldUpdateCache = cachedViewModel.currentAsset != id;
-	if (bShouldUpdateCache)
+	if (bShouldUpdateCache && Game::instance.physicalReloadPhase == EPhysicalReloadPhase::Idle)
 	{
 		UpdateCache(id, animationData);
-		Game::instance.bMagazineEjected = false;
-		Game::instance.bMagazineGrabbed = false;
+		Game::instance.ResetPhysicalReloadState();
 	}
+	else if (bShouldUpdateCache && cachedViewModel.rightWristIndex < 0)
+	{
+		UpdateCache(id, animationData);
+	}
+
+	ApplyPhysicalReloadBonePin(id, boneTransforms);
 
 	Transform unmodifiedHandTransform;
 	CalculateBoneTransform(cachedViewModel.rightWristIndex, boneArray, root, boneTransforms, unmodifiedHandTransform);
@@ -653,7 +701,7 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 		} while (i != lastIndex);
 	}
 
-	UpdatePhysicalMagazinePlacement(outBoneTransforms);
+	UpdatePhysicalMagazinePlacement(id, outBoneTransforms);
 }
 
 inline void WeaponHandler::CalculateBoneTransform(int boneIndex, Bone* boneArray, Transform& root, TransformQuat* boneTransforms, Transform& outTransform) const
@@ -836,9 +884,39 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	cachedViewModel.displayIndex = -1;
 	cachedViewModel.bHasMagazineBones = false;
 	cachedViewModel.magazineRootBoneIndex = -1;
+	cachedViewModel.reloadEmptyAnimIndex = -1;
+	cachedViewModel.reloadExitEmptyAnimIndex = -1;
 	memset(cachedViewModel.magazineHideBones, 0, sizeof(cachedViewModel.magazineHideBones));
 
 	Bone* boneArray = animationData->BoneArray;
+
+	for (int i = 0; i < animationData->NumAnimations; i++)
+	{
+		const char* animName = animationData->AnimationArray[i].N00000429;
+		if (!animName || !animName[0])
+		{
+			continue;
+		}
+
+		if (cachedViewModel.reloadEmptyAnimIndex < 0 && strstr(animName, "reload-empty"))
+		{
+			cachedViewModel.reloadEmptyAnimIndex = i;
+		}
+
+		if (cachedViewModel.reloadExitEmptyAnimIndex < 0
+			&& (strstr(animName, "exit-empty") || strstr(animName, "exit empty")
+				|| strstr(animName, "exit_empty") || strstr(animName, "reload-exit-empty")
+				|| strstr(animName, "reload-exit")))
+		{
+			cachedViewModel.reloadExitEmptyAnimIndex = i;
+		}
+	}
+
+	if (cachedViewModel.reloadEmptyAnimIndex >= 0 || cachedViewModel.reloadExitEmptyAnimIndex >= 0)
+	{
+		Logger::log << "[WeaponHandler] Reload anim indices: empty=" << cachedViewModel.reloadEmptyAnimIndex
+			<< " exitEmpty=" << cachedViewModel.reloadExitEmptyAnimIndex << std::endl;
+	}
 
 	for (int i = 0; i < animationData->NumBones; i++)
 	{

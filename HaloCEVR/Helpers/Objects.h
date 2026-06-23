@@ -7,22 +7,22 @@ struct HaloID
 {
 	uint16_t index; //0x0000
 	uint16_t id; //0x0002
+
+	bool operator==(const HaloID& other) const
+	{
+		return id == other.id && index == other.index;
+	}
+
+	bool operator!=(const HaloID& other) const
+	{
+		return id != other.id || index != other.index;
+	}
 };
 
-inline std::ostream& operator<<(std::ostream& os, const HaloID& id) 
+inline std::ostream& operator<<(std::ostream& os, const HaloID& id)
 {
 	os << "[ID: " << id.id << ", Index: " << id.index << "]";
 	return os;
-}
-
-inline bool operator==(HaloID& a, HaloID& b)
-{
-	return a.id == b.id && a.index == b.index;
-}
-
-inline bool operator!=(HaloID& a, HaloID& b)
-{
-	return a.id != b.id || a.index != b.index;
 }
 
 enum class ObjectProperties : uint16_t

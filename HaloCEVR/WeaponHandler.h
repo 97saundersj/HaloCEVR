@@ -1,6 +1,7 @@
 #pragma once
 #include "Maths/Vectors.h"
 #include "Maths/Matrices.h"
+#include "Helpers/Maths.h"
 #include "Helpers/Objects.h"
 
 #define DRAW_DEBUG_AIM 0
@@ -46,6 +47,10 @@ public:
 	bool SupportsPhysicalMagazineReload() const;
 	Vector3 GetBeltMagazineWorldPosition() const;
 	Vector3 GetMagazineSocketWorldPosition() const;
+	int GetReloadEmptyAnimIndex() const;
+	int GetReloadExitEmptyAnimIndex() const;
+	WeaponType GetCachedWeaponType() const { return cachedViewModel.weaponType; }
+	void ClearPhysicalReloadBoneSnapshot();
 
 	Vector3 localOffset;
 	Vector3 localRotation;
@@ -65,7 +70,7 @@ protected:
 
 	static bool IsMagazineBoneName(const char* name);
 	void MarkMagazineBone(int boneIndex);
-	void UpdatePhysicalMagazinePlacement(struct Transform* outBoneTransforms);
+	void UpdatePhysicalMagazinePlacement(const HaloID& id, struct Transform* outBoneTransforms);
 	void RelocateMagazineBones(struct Transform* outBoneTransforms, const Vector3& targetRootPos, const class Matrix4& targetRootOrientation);
 	Matrix4 GetDetachedMagazineOrientation() const;
 	void ApplyMatrixToTransform(const class Matrix4& matrix, struct Transform& outTransform) const;
@@ -74,6 +79,7 @@ protected:
 	Vector3 GetMagazineGripWorldOffset() const;
 	void LogViewModelBoneHierarchy(struct AssetData_ModelAnimations* animationData, const char* weaponAssetPath) const;
 	void LogViewModelBoneHierarchyNode(struct Bone* boneArray, int numBones, int boneIndex, int depth) const;
+	void ApplyPhysicalReloadBonePin(const HaloID& id, struct TransformQuat* boneTransforms);
 
 	inline Vector3 GetScopeLocation(WeaponType Type) const;
 
@@ -96,6 +102,8 @@ protected:
 		bool magazineHideBones[64]{};
 		bool bHasMagazineBones = false;
 		int magazineRootBoneIndex = -1;
+		int reloadEmptyAnimIndex = -1;
+		int reloadExitEmptyAnimIndex = -1;
 		Vector3 magazineSocketPosition{};
 
 	} cachedViewModel;
@@ -107,6 +115,9 @@ protected:
 	// Smoothed facing direction for 3DOF mode weapon model
 	Vector3 smoothed3DOFFacingDir = Vector3(1.0f, 0.0f, 0.0f);
 	bool bWasIn3DOFMode = false;
+
+	TransformQuat pausedBoneTransforms[64]{};
+	bool bHasPausedBoneSnapshot = false;
 
 	// Track previous yaw offset to detect snap turns
 	float lastYawOffset = 0.0f;

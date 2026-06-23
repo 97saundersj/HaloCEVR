@@ -4,12 +4,37 @@
 #include "Helpers/Camera.h"
 #include "Helpers/Menus.h"
 #include "Helpers/Maths.h"
+#include "Helpers/Objects.h"
+#include "Helpers/FirstPersonAnim.h"
+#include "Logger.h"
 
 
 #define RegisterBoolInput(set, x) x = vr->RegisterBoolInput(set, #x);
 #define RegisterVector2Input(set, x) x = vr->RegisterVector2Input(set, #x);
 #define ApplyBoolInput(x) controls.##x = vr->GetBoolInput(x) ? 127 : 0;
 #define ApplyImpulseBoolInput(x) controls.##x = vr->GetBoolInput(x, bHasChanged) && bHasChanged ? 127 : 0;
+
+static void SuppressVanillaReloadControl(unsigned char& reloadControl)
+{
+	if (!Game::instance.c_DisableEmptyMagazineAutoReload->Value())
+	{
+		return;
+	}
+
+	if (Game::instance.bUse3DOFAiming || !Game::instance.SupportsPhysicalMagazineReload())
+	{
+		return;
+	}
+
+	// Physical reload is driven by BeginPhysicalReload on VR edge input; vanilla controls.Reload
+	// still triggers the stock reload path (third-person skeleton / HUD hide) if left set.
+	if (Game::instance.IsLocalMagazineEmpty()
+		|| Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle
+		|| Game::instance.bIsReloading)
+	{
+		reloadControl = 0;
+	}
+}
 
 bool InputHandler::ShouldBlockAutoReloadStart() const
 {
@@ -30,7 +55,7 @@ bool InputHandler::ShouldBlockAutoReloadStart() const
 		return !vr->GetBoolInput(Reload);
 	}
 
-	return true;
+	return !Game::instance.bManualPhysicalReloadPending;
 }
 
 void InputHandler::RegisterInputs()
@@ -113,6 +138,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
+		SuppressVanillaReloadControl(controls.Reload);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
@@ -132,6 +158,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
+		SuppressVanillaReloadControl(controls.Reload);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
@@ -522,41 +549,280 @@ unsigned char InputHandler::UpdateCrouch()
 	return 0;
 }
 
-void InputHandler::UpdatePhysicalMagazineReload()
+void InputHandler::ResetPhysicalReloadState()
 {
-	// Physical magazine reload disabled or in 3DOF mode
-	if (!Game::instance.c_DisableEmptyMagazineAutoReload->Value()
-		|| Game::instance.bUse3DOFAiming
-		|| !Game::instance.HasMagazineBones())
+	Game::instance.ResetPhysicalReloadState();
+}
+
+WeaponDynamicObject* InputHandler::GetLocalWeaponObject()
+{
+	BaseDynamicObject* player = Helpers::GetLocalPlayer();
+	if (!player || player->weapon.id == 0xffff)
 	{
-		Game::instance.bMagazineEjected = false;
-		Game::instance.bMagazineGrabbed = false;
-		return;
+		return nullptr;
 	}
 
-	// Reset states when reloading
-	if (Game::instance.bIsReloading)
-	{
-		Game::instance.bMagazineEjected = false;
-		Game::instance.bMagazineGrabbed = false;
-		return;
-	}
+	return static_cast<WeaponDynamicObject*>(Helpers::GetDynamicObject(player->weapon));
+}
 
-	IVR* vr = Game::instance.GetVR();
-	bool bReloadChanged;
-	const bool reloadPressed = vr->GetBoolInput(Reload, bReloadChanged);
-
-	// Step 1: Press reload button when magazine is empty to eject it to the belt
-	if (!Game::instance.bMagazineEjected)
+static bool ShouldPausePhysicalReload(
+	uint16_t fpAnimId,
+	uint16_t fpAnimFrame,
+	int reloadEmptyAnimIndex,
+	int ejectFrame,
+	uint16_t initialRemaining,
+	uint16_t currentRemaining,
+	int ejectTicksFromStart)
+{
+	if (initialRemaining > currentRemaining && ejectTicksFromStart > 0)
 	{
-		if (Game::instance.IsLocalMagazineEmpty() && reloadPressed && bReloadChanged)
+		const uint16_t elapsed = initialRemaining - currentRemaining;
+		if (elapsed >= static_cast<uint16_t>(ejectTicksFromStart))
 		{
+			return true;
+		}
+	}
+
+	if (ejectFrame < 0)
+	{
+		return false;
+	}
+
+	if (reloadEmptyAnimIndex >= 0)
+	{
+		return fpAnimId == static_cast<uint16_t>(reloadEmptyAnimIndex)
+			&& fpAnimFrame >= static_cast<uint16_t>(ejectFrame);
+	}
+
+	return fpAnimFrame >= static_cast<uint16_t>(ejectFrame);
+}
+
+void InputHandler::ApplyPhysicalReloadAnimPin()
+{
+	if (Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PausedAtEject)
+	{
+		return;
+	}
+
+	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
+	if (!weaponObject)
+	{
+		return;
+	}
+
+	// Freeze reload timer only. FirstPersonAnimBase globals are unreliable on this build
+	// (fpAnim/fpFrame reads stay wrong); pose freeze is handled by bone snapshot in WeaponHandler.
+	if (Game::instance.frozenReloadRemaining > 0)
+	{
+		weaponObject->weaponData[0].reloadRemaining = Game::instance.frozenReloadRemaining;
+	}
+	else
+	{
+		weaponObject->weaponData[0].reloadRemaining = 9999;
+		Game::instance.frozenReloadRemaining = 9999;
+	}
+
+	weaponObject->weaponData[0].reloadState = 1;
+}
+
+void InputHandler::UpdateReloadAnimationPause()
+{
+	if (Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PlayingEject
+		&& Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PausedAtEject
+		&& Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PlayingFinish)
+	{
+		return;
+	}
+
+	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
+	if (!weaponObject)
+	{
+		ResetPhysicalReloadState();
+		return;
+	}
+
+	const uint16_t fpAnimId = Helpers::GetFirstPersonBaseAnimId();
+	const uint16_t fpAnimFrame = Helpers::GetFirstPersonBaseAnimFrame();
+
+	static EPhysicalReloadPhase lastLoggedPhase = EPhysicalReloadPhase::Idle;
+	static int logFrameCounter = 0;
+	const EPhysicalReloadPhase currentPhase = Game::instance.physicalReloadPhase;
+	const bool phaseChanged = currentPhase != lastLoggedPhase;
+	if (phaseChanged)
+	{
+		logFrameCounter = 0;
+		lastLoggedPhase = currentPhase;
+	}
+	else
+	{
+		logFrameCounter++;
+	}
+
+	if (Game::instance.c_LogPhysicalReloadFrames->Value()
+		&& (Game::instance.bIsReloading || currentPhase != EPhysicalReloadPhase::Idle)
+		&& (phaseChanged
+			|| currentPhase == EPhysicalReloadPhase::PlayingEject
+			|| (currentPhase == EPhysicalReloadPhase::PausedAtEject && logFrameCounter % 30 == 0)
+			|| currentPhase == EPhysicalReloadPhase::PlayingFinish))
+	{
+		Logger::log << "[PhysicalReload] weapon=" << static_cast<int>(Game::instance.GetCachedWeaponType())
+			<< " phase=" << static_cast<int>(currentPhase)
+			<< " fpAnim=" << fpAnimId
+			<< " fpFrame=" << fpAnimFrame
+			<< " reloadEmptyIdx=" << Game::instance.GetReloadEmptyAnimIndex()
+			<< " reloadState=" << weaponObject->weaponData[0].reloadState
+			<< " reloadRemaining=" << weaponObject->weaponData[0].reloadRemaining
+			<< " initialRemaining=" << Game::instance.initialReloadRemaining
+			<< " ammo=" << weaponObject->weaponData[0].ammo
+			<< std::endl;
+	}
+
+	if (Game::instance.physicalReloadPhase == EPhysicalReloadPhase::PlayingEject)
+	{
+		if (!Game::instance.bIsReloading)
+		{
+			ResetPhysicalReloadState();
+			return;
+		}
+
+		if (Game::instance.initialReloadRemaining == 0)
+		{
+			Game::instance.initialReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
+		}
+
+		const int ejectFrame = Game::instance.GetPhysicalReloadEjectFrame();
+		const int reloadEmptyAnimIndex = Game::instance.GetReloadEmptyAnimIndex();
+		const int ejectTicksFromStart = Game::instance.c_PhysicalReloadEjectTicksFromStart->Value();
+
+		if (ShouldPausePhysicalReload(
+			fpAnimId,
+			fpAnimFrame,
+			reloadEmptyAnimIndex,
+			ejectFrame,
+			Game::instance.initialReloadRemaining,
+			weaponObject->weaponData[0].reloadRemaining,
+			ejectTicksFromStart))
+		{
+			const int configuredEjectFrame = ejectFrame >= 0 ? ejectFrame : 0;
+			Game::instance.pausedReloadAnimIndex = reloadEmptyAnimIndex >= 0
+				? static_cast<uint16_t>(reloadEmptyAnimIndex)
+				: fpAnimId;
+			Game::instance.pausedReloadAnimFrame = fpAnimId == static_cast<uint16_t>(reloadEmptyAnimIndex) && fpAnimFrame > 0
+				? fpAnimFrame
+				: static_cast<uint16_t>(configuredEjectFrame);
+			Game::instance.frozenReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
+			Game::instance.physicalReloadPhase = EPhysicalReloadPhase::PausedAtEject;
 			Game::instance.bMagazineEjected = true;
 		}
+	}
+	else if (Game::instance.physicalReloadPhase == EPhysicalReloadPhase::PausedAtEject)
+	{
+		ApplyPhysicalReloadAnimPin();
+
+		if (!Game::instance.bIsReloading)
+		{
+			ResetPhysicalReloadState();
+		}
+	}
+	else if (Game::instance.physicalReloadPhase == EPhysicalReloadPhase::PlayingFinish)
+	{
+		Weapon& weapon = weaponObject->weaponData[0];
+
+		static int finishFrameCounter = 0;
+		if (phaseChanged)
+		{
+			finishFrameCounter = 0;
+		}
+		else
+		{
+			finishFrameCounter++;
+		}
+
+		// Pausing mid state-1 skips the normal transition that refills ammo via ReloadEnd.
+		constexpr int kFinishReloadTicks = 15;
+		const bool bTimerDone = weapon.reloadRemaining == 0 || weapon.reloadState == 0;
+		const bool bFinishTimedOut = finishFrameCounter >= kFinishReloadTicks + 5;
+
+		if (weapon.ammo == 0 && (bTimerDone || bFinishTimedOut))
+		{
+			Game::instance.TriggerWeaponReloadEnd();
+		}
+		else if (!Game::instance.bIsReloading)
+		{
+			ResetPhysicalReloadState();
+		}
+	}
+}
+
+void InputHandler::BeginPhysicalReload()
+{
+	Game::instance.bManualPhysicalReloadPending = true;
+	Game::instance.physicalReloadPhase = EPhysicalReloadPhase::PlayingEject;
+	Game::instance.initialReloadRemaining = 0;
+	Game::instance.TriggerWeaponReload();
+	Game::instance.bManualPhysicalReloadPending = false;
+
+	if (!Game::instance.bIsReloading)
+	{
+		ResetPhysicalReloadState();
 		return;
 	}
 
-	// Step 2: Magazine is ejected - handle grab and insert
+	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
+	if (weaponObject)
+	{
+		Game::instance.initialReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
+	}
+}
+
+void InputHandler::ResumePhysicalReloadAnimation()
+{
+	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
+	if (!weaponObject)
+	{
+		ResetPhysicalReloadState();
+		return;
+	}
+
+	const int resumeFrame = Game::instance.GetPhysicalReloadResumeFrame();
+	const int exitAnimIndex = Game::instance.GetReloadExitEmptyAnimIndex();
+	const int reloadEmptyAnimIndex = Game::instance.GetReloadEmptyAnimIndex();
+
+	if (Helpers::HasFirstPersonAnimBase())
+	{
+		if (exitAnimIndex >= 0)
+		{
+			Helpers::SetFirstPersonBaseAnimId(static_cast<uint16_t>(exitAnimIndex));
+			Helpers::SetFirstPersonBaseAnimFrame(0);
+		}
+		else if (reloadEmptyAnimIndex >= 0)
+		{
+			Helpers::SetFirstPersonBaseAnimId(static_cast<uint16_t>(reloadEmptyAnimIndex));
+			if (resumeFrame >= 0)
+			{
+				Helpers::SetFirstPersonBaseAnimFrame(static_cast<uint16_t>(resumeFrame));
+			}
+		}
+		else if (resumeFrame >= 0)
+		{
+			Helpers::SetFirstPersonBaseAnimFrame(static_cast<uint16_t>(resumeFrame));
+		}
+	}
+
+	constexpr uint16_t kFinishReloadTicks = 15;
+	weaponObject->weaponData[0].reloadRemaining = kFinishReloadTicks;
+	weaponObject->weaponData[0].reloadState = 2;
+
+	Game::instance.physicalReloadPhase = EPhysicalReloadPhase::PlayingFinish;
+	Game::instance.bMagazineGrabbed = false;
+	Game::instance.bMagazineEjected = false;
+	Game::instance.frozenReloadRemaining = 0;
+	Game::instance.ClearPhysicalReloadBoneSnapshot();
+}
+
+void InputHandler::HandlePhysicalMagazineGrabInsert()
+{
+	IVR* vr = Game::instance.GetVR();
 	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
 	Matrix4 offHandTransform = vr->GetControllerTransform(offHand, true);
 	Vector3 offHandPos = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
@@ -576,7 +842,6 @@ void InputHandler::UpdatePhysicalMagazineReload()
 
 	if (!Game::instance.bMagazineGrabbed)
 	{
-		// Grab magazine from belt
 		if (gripHeld && offHandNearBelt)
 		{
 			Game::instance.bMagazineGrabbed = true;
@@ -584,15 +849,53 @@ void InputHandler::UpdatePhysicalMagazineReload()
 	}
 	else if (offHandNearSocket)
 	{
-		// Insert magazine into weapon
-		Game::instance.TriggerWeaponReload();
-		Game::instance.bMagazineEjected = false;
-		Game::instance.bMagazineGrabbed = false;
+		ResumePhysicalReloadAnimation();
 	}
 	else if (!gripHeld)
 	{
-		// Released grip - drop magazine back to belt
 		Game::instance.bMagazineGrabbed = false;
+	}
+}
+
+void InputHandler::UpdatePhysicalMagazineReload()
+{
+	if (!Game::instance.c_DisableEmptyMagazineAutoReload->Value()
+		|| Game::instance.bUse3DOFAiming
+		|| !Game::instance.HasMagazineBones())
+	{
+		if (Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle)
+		{
+			ResetPhysicalReloadState();
+		}
+		else
+		{
+			Game::instance.bMagazineEjected = false;
+			Game::instance.bMagazineGrabbed = false;
+		}
+		return;
+	}
+
+	UpdateReloadAnimationPause();
+
+	switch (Game::instance.physicalReloadPhase)
+	{
+	case EPhysicalReloadPhase::Idle:
+	{
+		IVR* vr = Game::instance.GetVR();
+		bool bReloadChanged = false;
+		const bool reloadPressed = vr->GetBoolInput(Reload, bReloadChanged);
+
+		if (Game::instance.IsLocalMagazineEmpty() && reloadPressed && bReloadChanged)
+		{
+			BeginPhysicalReload();
+		}
+		break;
+	}
+	case EPhysicalReloadPhase::PausedAtEject:
+		HandlePhysicalMagazineGrabInsert();
+		break;
+	default:
+		break;
 	}
 }
 

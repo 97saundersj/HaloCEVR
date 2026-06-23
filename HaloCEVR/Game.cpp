@@ -876,6 +876,81 @@ void Game::TriggerWeaponReload()
 	ReloadStart(player->weapon, 0, true);
 }
 
+void Game::TriggerWeaponReloadEnd()
+{
+	BaseDynamicObject* player = Helpers::GetLocalPlayer();
+	if (!player || player->weapon.id == 0xffff)
+	{
+		return;
+	}
+
+	Hooks::CallReloadEnd(0, player->weapon);
+}
+
+void Game::ResetPhysicalReloadState()
+{
+	physicalReloadPhase = EPhysicalReloadPhase::Idle;
+	bManualPhysicalReloadPending = false;
+	bMagazineEjected = false;
+	bMagazineGrabbed = false;
+	pausedReloadAnimIndex = 0;
+	pausedReloadAnimFrame = 0;
+	frozenReloadRemaining = 0;
+	initialReloadRemaining = 0;
+	weaponHandler.ClearPhysicalReloadBoneSnapshot();
+}
+
+int Game::GetReloadEmptyAnimIndex() const
+{
+	return weaponHandler.GetReloadEmptyAnimIndex();
+}
+
+int Game::GetReloadExitEmptyAnimIndex() const
+{
+	return weaponHandler.GetReloadExitEmptyAnimIndex();
+}
+
+WeaponType Game::GetCachedWeaponType() const
+{
+	return weaponHandler.GetCachedWeaponType();
+}
+
+int Game::GetPhysicalReloadEjectFrame() const
+{
+	switch (weaponHandler.GetCachedWeaponType())
+	{
+	case WeaponType::Pistol:
+		return c_PhysicalReloadEjectFrame_Pistol->Value();
+	case WeaponType::AssaultRifle:
+		return c_PhysicalReloadEjectFrame_AssaultRifle->Value();
+	default:
+		return c_PhysicalReloadEjectFrame_Default->Value();
+	}
+}
+
+int Game::GetPhysicalReloadResumeFrame() const
+{
+	switch (weaponHandler.GetCachedWeaponType())
+	{
+	case WeaponType::Pistol:
+		return c_PhysicalReloadResumeFrame_Pistol->Value();
+	case WeaponType::AssaultRifle:
+		return c_PhysicalReloadResumeFrame_AssaultRifle->Value();
+	default:
+		return c_PhysicalReloadResumeFrame_Default->Value();
+	}
+}
+
+void Game::ApplyPhysicalReloadAnimPin()
+{
+	inputHandler.ApplyPhysicalReloadAnimPin();
+}
+
+void Game::ClearPhysicalReloadBoneSnapshot()
+{
+	weaponHandler.ClearPhysicalReloadBoneSnapshot();
+}
+
 bool Game::IsLocalMagazineEmpty() const
 {
 	return weaponHandler.IsLocalMagazineEmpty();
@@ -945,6 +1020,7 @@ void Game::ReloadEnd(short param1, HaloID param2)
 	}
 
 	bIsReloading = false;
+	ResetPhysicalReloadState();
 	//Logger::log << "Reload End" << std::endl;
 }
 
@@ -1141,6 +1217,14 @@ void Game::SetupConfigs()
 	c_RightShoulderHolsterOffset = config.RegisterVector3("RightShoulderHolsterOffset", "The (foward, left, up) Offset of the right shoulder holster relative to the headset's location", Vector3(-0.15f, -0.25f, -0.25f));
 	// Manual reload settings
 	c_DisableEmptyMagazineAutoReload = config.RegisterBool("DisableEmptyMagazineAutoReload", "When enabled, auto-reload is disabled and you must grab the belt magazine and insert it into the weapon. The belt magazine is always shown when empty in 6DOF mode", false);
+	c_LogPhysicalReloadFrames = config.RegisterBool("LogPhysicalReloadFrames", "When enabled, logs weapon animation index and frame each tick during physical reload (use to calibrate eject/resume frame settings)", false);
+	c_PhysicalReloadEjectFrame_Default = config.RegisterInt("PhysicalReloadEjectFrame_Default", "Animation frame to pause at when the magazine is ejected (default for weapons without a specific entry)", 20);
+	c_PhysicalReloadResumeFrame_Default = config.RegisterInt("PhysicalReloadResumeFrame_Default", "Animation frame to resume from after inserting a magazine (default for weapons without a specific entry)", 21);
+	c_PhysicalReloadEjectFrame_Pistol = config.RegisterInt("PhysicalReloadEjectFrame_Pistol", "Eject pause frame for the M6D pistol reload-empty animation", 15);
+	c_PhysicalReloadResumeFrame_Pistol = config.RegisterInt("PhysicalReloadResumeFrame_Pistol", "Resume frame for the M6D pistol after magazine insert", 16);
+	c_PhysicalReloadEjectFrame_AssaultRifle = config.RegisterInt("PhysicalReloadEjectFrame_AssaultRifle", "Eject pause frame for the MA5B assault rifle reload-empty animation", 18);
+	c_PhysicalReloadResumeFrame_AssaultRifle = config.RegisterInt("PhysicalReloadResumeFrame_AssaultRifle", "Resume frame for the MA5B assault rifle after magazine insert", 19);
+	c_PhysicalReloadEjectTicksFromStart = config.RegisterInt("PhysicalReloadEjectTicksFromStart", "Fallback: pause this many reload ticks after reload starts (used when FP anim frame cannot be matched). 30 ticks = 1 second", 10);
 	c_BeltMagazineOffset = config.RegisterVector3("BeltMagazineOffset", "The (forward, left, up) offset of the spare magazine on your belt relative to the headset", Vector3(0.1f, 0.38f, -0.32f));
 	c_BeltMagazineGrabDistance = config.RegisterFloat("BeltMagazineGrabDistance", "How close the off-hand must be to the belt magazine to grab it (metres)", 0.08f);
 	c_BeltMagazineInsertDistance = config.RegisterFloat("BeltMagazineInsertDistance", "How close the off-hand must be to the weapon magazine socket to insert and reload (metres)", 0.06f);

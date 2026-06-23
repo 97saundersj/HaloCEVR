@@ -21,6 +21,7 @@ public:
 	static bool Freeze();
 	static void Unfreeze();
 	static void ResolveIndirect(struct Offset& offset, long long& Address);
+	static void ResolveFirstPersonAnimBase();
 
 	// All Hooks go here:
 	DEFINE_HOOK_FULL(InitDirectX, bool);
@@ -45,6 +46,7 @@ public:
 	DEFINE_HOOK(ReloadEnd);
 
 	static void CallReloadStart(HaloID param1, short param2, bool param3);
+	static void CallReloadEnd(short magazineIndex, HaloID weaponObjectId);
 
 	// All direct patches go here:
 	static void P_FixTabOut();

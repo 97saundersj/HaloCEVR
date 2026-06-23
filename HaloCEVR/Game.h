@@ -19,6 +19,14 @@
 
 enum class ERenderState { UNKNOWN, LEFT_EYE, RIGHT_EYE, GAME, SCOPE};
 
+enum class EPhysicalReloadPhase
+{
+	Idle,
+	PlayingEject,
+	PausedAtEject,
+	PlayingFinish
+};
+
 class Game
 {
 public:
@@ -63,6 +71,15 @@ public:
 	void ReloadEnd(short param1, HaloID param2);
 	bool ShouldBlockAutoReloadStart() const;
 	void TriggerWeaponReload();
+	void TriggerWeaponReloadEnd();
+	void ResetPhysicalReloadState();
+	void ApplyPhysicalReloadAnimPin();
+	void ClearPhysicalReloadBoneSnapshot();
+	int GetPhysicalReloadEjectFrame() const;
+	int GetPhysicalReloadResumeFrame() const;
+	int GetReloadEmptyAnimIndex() const;
+	int GetReloadExitEmptyAnimIndex() const;
+	WeaponType GetCachedWeaponType() const;
 	bool IsLocalMagazineEmpty() const;
 	bool HasMagazineBones() const;
 	bool SupportsPhysicalMagazineReload() const;
@@ -108,8 +125,14 @@ public:
 	Config config;
 	bool bIsFiring = false;
 	bool bIsReloading = false;
-	bool bMagazineEjected = false;  // True when player pressed reload to eject empty mag
+	bool bMagazineEjected = false;  // True when reload animation reached the eject pause point
 	bool bMagazineGrabbed = false;  // True when player is holding the ejected mag
+	bool bManualPhysicalReloadPending = false;
+	EPhysicalReloadPhase physicalReloadPhase = EPhysicalReloadPhase::Idle;
+	uint16_t pausedReloadAnimIndex = 0;
+	uint16_t pausedReloadAnimFrame = 0;
+	uint16_t frozenReloadRemaining = 0;
+	uint16_t initialReloadRemaining = 0;
 
 	InGameRenderer inGameRenderer;
 	InGameRenderer scopeRenderer;
@@ -248,6 +271,14 @@ public:
 	FloatProperty* c_RightHandMeleeSwingSpeed = nullptr;
 	FloatProperty* c_CrouchHeight = nullptr;
 	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
+	BoolProperty* c_LogPhysicalReloadFrames = nullptr;
+	IntProperty* c_PhysicalReloadEjectFrame_Default = nullptr;
+	IntProperty* c_PhysicalReloadResumeFrame_Default = nullptr;
+	IntProperty* c_PhysicalReloadEjectFrame_Pistol = nullptr;
+	IntProperty* c_PhysicalReloadResumeFrame_Pistol = nullptr;
+	IntProperty* c_PhysicalReloadEjectFrame_AssaultRifle = nullptr;
+	IntProperty* c_PhysicalReloadResumeFrame_AssaultRifle = nullptr;
+	IntProperty* c_PhysicalReloadEjectTicksFromStart = nullptr;
 	Vector3Property* c_BeltMagazineOffset = nullptr;
 	FloatProperty* c_BeltMagazineGrabDistance = nullptr;
 	FloatProperty* c_BeltMagazineInsertDistance = nullptr;
