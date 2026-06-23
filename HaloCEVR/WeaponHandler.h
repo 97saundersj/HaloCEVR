@@ -49,6 +49,10 @@ public:
 	Vector3 GetMagazineSocketWorldPosition() const;
 	int GetReloadEmptyAnimIndex() const;
 	int GetReloadExitEmptyAnimIndex() const;
+	int GetReloadFullAnimIndex() const;
+	int GetReloadExitFullAnimIndex() const;
+	int GetActiveReloadAnimIndex() const;
+	int GetActiveReloadExitAnimIndex() const;
 	WeaponType GetCachedWeaponType() const { return cachedViewModel.weaponType; }
 	void ClearPhysicalReloadBoneSnapshot();
 
@@ -69,7 +73,9 @@ protected:
 	inline void TransformToMatrix4(struct Transform& inTransform, class Matrix4& outMatrix) const;
 
 	static bool IsMagazineBoneName(const char* name);
+	bool IsFirstPersonWeaponAnimationsAsset(struct AssetData_ModelAnimations* animationData) const;
 	void MarkMagazineBone(int boneIndex);
+	void MarkMagazineDescendants(struct Bone* boneArray, int numBones, int rootIndex);
 	void UpdatePhysicalMagazinePlacement(const HaloID& id, struct Transform* outBoneTransforms);
 	void RelocateMagazineBones(struct Transform* outBoneTransforms, const Vector3& targetRootPos, const class Matrix4& targetRootOrientation);
 	Matrix4 GetDetachedMagazineOrientation() const;
@@ -104,6 +110,8 @@ protected:
 		int magazineRootBoneIndex = -1;
 		int reloadEmptyAnimIndex = -1;
 		int reloadExitEmptyAnimIndex = -1;
+		int reloadFullAnimIndex = -1;
+		int reloadExitFullAnimIndex = -1;
 		Vector3 magazineSocketPosition{};
 
 	} cachedViewModel;

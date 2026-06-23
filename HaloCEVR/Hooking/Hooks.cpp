@@ -4,6 +4,7 @@
 #include "../Helpers/DX9.h"
 #include "../Helpers/Cutscene.h"
 #include "../Helpers/FirstPersonAnim.h"
+#include "../Helpers/DirectSoundHook.h"
 #include "../Game.h"
 #include "../Helpers/Menus.h"
 #include "../Helpers/Maths.h"
@@ -73,6 +74,7 @@ void Hooks::InitHooks()
 	SigScanner::UpdateOffset(o.TextAlphaWrite);
 	SigScanner::UpdateOffset(o.CrouchHeight);
 	SigScanner::UpdateOffset(o.CinematicBarDrawCall);
+	SigScanner::UpdateOffset(o.SoundsGlobal, false);
 
 	// There's almost certainly a better way to detect chimera than this
 	Game::instance.bDetectedChimera |= SigScanner::UpdateOffset(o.TabOutVideo, false) < 0;
@@ -115,6 +117,8 @@ void Hooks::EnableAllHooks()
 	DrawViewModel.EnableHook();
 	ReloadStart.EnableHook();
 	ReloadEnd.EnableHook();
+
+	Helpers::DirectSoundHook::Init();
 
 	Freeze();
 
@@ -356,6 +360,12 @@ bool Hooks::H_InitDirectX()
 void Hooks::H_DrawFrame(Renderer* param1, short param2, short* param3, float tickProgress, float deltaTime)
 {
 	VR_PROFILE_SCOPE(Hooks_DrawFrame);
+
+	if (!Helpers::DirectSoundHook::IsActive())
+	{
+		Helpers::DirectSoundHook::Init();
+	}
+
 	/*
 	In order to get each perspective (left eye, right eye, PiP scope, mirror [todo: just blit an eye for the mirror])
 	we need to call the draw function multiple times, but should take care to avoid creating multiple d3d scenes as

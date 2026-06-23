@@ -55,6 +55,9 @@ protected:
 
 	bool bWasGripping = false;
 	bool bWasSwappingHands = false;
+	// Set while the off-hand grip is held to grab/insert a magazine during physical reload.
+	// Blocks weapon-hand swapping until that grip is released, so the insert hold isn't read as a swap.
+	bool bSuppressSwapUntilGripRelease = false;
 	
 	InputBindingID Jump = 0;
 	InputBindingID SwitchGrenades = 0;

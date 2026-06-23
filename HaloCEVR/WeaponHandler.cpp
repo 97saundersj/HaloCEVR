@@ -82,6 +82,70 @@ void WeaponHandler::MarkMagazineBone(int boneIndex)
 	}
 }
 
+void WeaponHandler::MarkMagazineDescendants(Bone* boneArray, int numBones, int rootIndex)
+{
+	if (!boneArray || rootIndex < 0 || rootIndex >= numBones)
+	{
+		return;
+	}
+
+	MarkMagazineBone(rootIndex);
+
+	for (int i = 0; i < numBones && i < 64; i++)
+	{
+		if (i == rootIndex)
+		{
+			continue;
+		}
+
+		int parentIndex = boneArray[i].Parent;
+		int guard = 0;
+		while (parentIndex >= 0 && parentIndex < numBones && guard++ < numBones)
+		{
+			if (parentIndex == rootIndex)
+			{
+				MarkMagazineBone(i);
+				break;
+			}
+
+			parentIndex = boneArray[parentIndex].Parent;
+		}
+	}
+}
+
+bool WeaponHandler::IsFirstPersonWeaponAnimationsAsset(AssetData_ModelAnimations* animationData) const
+{
+	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0)
+	{
+		return false;
+	}
+
+	bool hasFrameGun = false;
+	bool hasFrameRWrist = false;
+	const int numBones = std::min(animationData->NumBones, 128);
+
+	for (int i = 0; i < numBones; i++)
+	{
+		const char* name = animationData->BoneArray[i].BoneName;
+		if (!name[0])
+		{
+			continue;
+		}
+
+		if (strstr(name, "frame gun") != nullptr)
+		{
+			hasFrameGun = true;
+		}
+
+		if (strstr(name, "r wrist") != nullptr)
+		{
+			hasFrameRWrist = true;
+		}
+	}
+
+	return hasFrameGun && hasFrameRWrist;
+}
+
 bool WeaponHandler::IsLocalMagazineEmpty() const
 {
 	BaseDynamicObject* player = Helpers::GetLocalPlayer();
@@ -121,6 +185,33 @@ int WeaponHandler::GetReloadExitEmptyAnimIndex() const
 	return cachedViewModel.reloadExitEmptyAnimIndex;
 }
 
+int WeaponHandler::GetReloadFullAnimIndex() const
+{
+	return cachedViewModel.reloadFullAnimIndex;
+}
+
+int WeaponHandler::GetReloadExitFullAnimIndex() const
+{
+	return cachedViewModel.reloadExitFullAnimIndex;
+}
+
+int WeaponHandler::GetActiveReloadAnimIndex() const
+{
+	return Game::instance.bPhysicalReloadFromEmpty
+		? cachedViewModel.reloadEmptyAnimIndex
+		: cachedViewModel.reloadFullAnimIndex;
+}
+
+int WeaponHandler::GetActiveReloadExitAnimIndex() const
+{
+	if (Game::instance.bPhysicalReloadFromEmpty)
+	{
+		return cachedViewModel.reloadExitEmptyAnimIndex;
+	}
+
+	return cachedViewModel.reloadExitFullAnimIndex;
+}
+
 bool WeaponHandler::ShouldUsePhysicalMagazineReload() const
 {
 	return ShouldShowBeltMagazine()
@@ -152,17 +243,32 @@ int WeaponHandler::ResolveMagazineRootBoneIndex() const
 
 Vector3 WeaponHandler::GetBeltMagazineWorldPosition() const
 {
-	// Camera-relative placement (same space as the room-centre marker — HMD offsets were unreliable).
-	Vector3 position = Helpers::GetCamera().position;
+	// Anchor to hip height in world units (ShowRoomCentre uses z -= 0.62 for feet).
+	Vector3 beltPos = Helpers::GetCamera().position;
+	beltPos.z -= Game::instance.c_BeltMagazineHipDrop->Value();
+
+	Matrix4 headTransform = Game::instance.GetVR()->GetHMDTransform(true);
+	Vector3 forward = headTransform.getForwardAxis();
+	forward.z = 0.0f;
+	if (forward.lengthSqr() < 0.0001f)
+	{
+		forward = Vector3(1.0f, 0.0f, 0.0f);
+	}
+	else
+	{
+		forward.normalize();
+	}
+
+	const Vector3 worldUp(0.0f, 0.0f, 1.0f);
+	Vector3 left = worldUp.cross(forward);
+	left.normalize();
+
+	const Vector3 offset = Game::instance.c_BeltMagazineOffset->Value();
 	const float scale = Game::instance.MetresToWorld(1.0f);
+	beltPos += forward * (offset.x * scale);
+	beltPos += left * (offset.y * scale);
 
-	position.z -= 0.62f;
-	position.z += scale * 1.0f;
-	position.x += scale * 0.25f;
-
-	const float hipOffset = scale * 0.30f;
-	position.y += Game::instance.bLeftHanded ? -hipOffset : hipOffset;
-	return position;
+	return beltPos;
 }
 
 Vector3 WeaponHandler::GetMagazineSocketWorldPosition() const
@@ -225,11 +331,7 @@ void WeaponHandler::RelocateMagazineBones(Transform* outBoneTransforms, const Ve
 		Matrix4 newBoneMatrix = newRootMatrix * relativeMatrix;
 
 		ApplyMatrixToTransform(newBoneMatrix, outBoneTransforms[i]);
-
-		if (outBoneTransforms[i].scale < 0.01f)
-		{
-			outBoneTransforms[i].scale = 1.0f;
-		}
+		outBoneTransforms[i].scale = 1.0f;
 	}
 }
 
@@ -277,13 +379,34 @@ Matrix4 WeaponHandler::GetDetachedMagazineOrientation() const
 
 void WeaponHandler::UpdatePhysicalMagazinePlacement(const HaloID& id, Transform* outBoneTransforms)
 {
+	const bool bDebug = Game::instance.c_LogPhysicalReloadDebug->Value();
+	static int debugLogCounter = 0;
+
 	if (cachedViewModel.currentAsset != id || cachedViewModel.rightWristIndex < 0)
 	{
+		if (bDebug && Game::instance.bMagazineEjected && debugLogCounter++ % 60 == 0)
+		{
+			Logger::log << "[PhysicalReload:Belt] skip placement assetMismatch"
+				<< " passAsset=" << id
+				<< " cachedAsset=" << cachedViewModel.currentAsset
+				<< " rightWrist=" << cachedViewModel.rightWristIndex
+				<< std::endl;
+		}
 		return;
 	}
 
 	if (!ShouldShowBeltMagazine())
 	{
+		if (bDebug && debugLogCounter++ % 60 == 0
+			&& Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle)
+		{
+			Logger::log << "[PhysicalReload:Belt] skip show"
+				<< " hasMagBones=" << HasMagazineBones()
+				<< " b3DOF=" << Game::instance.bUse3DOFAiming
+				<< " bMagEjected=" << Game::instance.bMagazineEjected
+				<< " phase=" << static_cast<int>(Game::instance.physicalReloadPhase)
+				<< std::endl;
+		}
 		return;
 	}
 
@@ -304,7 +427,63 @@ void WeaponHandler::UpdatePhysicalMagazinePlacement(const HaloID& id, Transform*
 		? GetOffHandWorldPosition() + GetMagazineGripWorldOffset()
 		: GetBeltMagazineWorldPosition();
 
+	const int rootIndex = ResolveMagazineRootBoneIndex();
+	if (rootIndex < 0)
+	{
+		if (bDebug && debugLogCounter++ % 30 == 0)
+		{
+			Logger::log << "[PhysicalReload:Belt] no magazine root bone resolved" << std::endl;
+		}
+		return;
+	}
+
+	int markedBoneCount = 0;
+	for (int i = 0; i < 64; i++)
+	{
+		if (cachedViewModel.magazineHideBones[i])
+		{
+			markedBoneCount++;
+		}
+	}
+
 	RelocateMagazineBones(outBoneTransforms, targetPos, GetDetachedMagazineOrientation());
+
+	if (bDebug)
+	{
+		if (debugLogCounter++ % 30 == 0)
+		{
+			const Vector3 camPos = Helpers::GetCamera().position;
+			Logger::log << "[PhysicalReload:Belt] placed"
+				<< " rootBone=" << rootIndex
+				<< " markedBones=" << markedBoneCount
+				<< " grabbed=" << Game::instance.bMagazineGrabbed
+				<< " target=(" << targetPos.x << "," << targetPos.y << "," << targetPos.z << ")"
+				<< " cam=(" << camPos.x << "," << camPos.y << "," << camPos.z << ")"
+				<< " magScale=" << outBoneTransforms[rootIndex].scale
+				<< std::endl;
+		}
+
+		Vector3 forward = GetDetachedMagazineOrientation().getForwardAxis();
+		forward.z = 0.0f;
+		if (forward.lengthSqr() < 0.0001f)
+		{
+			forward = Vector3(1.0f, 0.0f, 0.0f);
+		}
+		else
+		{
+			forward.normalize();
+		}
+
+		const Vector3 up(0.0f, 0.0f, 1.0f);
+			Game::instance.inGameRenderer.DrawPolygon(
+			targetPos,
+			forward,
+			up,
+			6,
+			Game::instance.MetresToWorld(0.08f),
+			D3DCOLOR_ARGB(200, 255, 140, 0),
+			false);
+	}
 }
 
 void WeaponHandler::ClearPhysicalReloadBoneSnapshot()
@@ -325,14 +504,17 @@ void WeaponHandler::ApplyPhysicalReloadBonePin(const HaloID& id, TransformQuat* 
 
 	const EPhysicalReloadPhase phase = Game::instance.physicalReloadPhase;
 
-	if (phase == EPhysicalReloadPhase::PlayingEject)
+	if (phase == EPhysicalReloadPhase::PausedAtEject)
 	{
-		memcpy(pausedBoneTransforms, boneTransforms, sizeof(pausedBoneTransforms));
-		bHasPausedBoneSnapshot = true;
-	}
-	else if (phase == EPhysicalReloadPhase::PausedAtEject && bHasPausedBoneSnapshot)
-	{
-		memcpy(boneTransforms, pausedBoneTransforms, sizeof(pausedBoneTransforms));
+		if (!bHasPausedBoneSnapshot)
+		{
+			memcpy(pausedBoneTransforms, boneTransforms, sizeof(pausedBoneTransforms));
+			bHasPausedBoneSnapshot = true;
+		}
+		else
+		{
+			memcpy(boneTransforms, pausedBoneTransforms, sizeof(pausedBoneTransforms));
+		}
 	}
 }
 
@@ -452,6 +634,12 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 	}
 
 	AssetData_ModelAnimations* animationData = viewModel->Data;
+	if (!IsFirstPersonWeaponAnimationsAsset(animationData))
+	{
+		ReferenceUpdateViewModelImpl(id, pos, facing, up, boneTransforms, outBoneTransforms);
+		return;
+	}
+
 	Bone* boneArray = animationData->BoneArray;
 
 	Transform root;
@@ -459,14 +647,10 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 	root.translation = *pos;
 
 	const bool bShouldUpdateCache = cachedViewModel.currentAsset != id;
-	if (bShouldUpdateCache && Game::instance.physicalReloadPhase == EPhysicalReloadPhase::Idle)
+	if (bShouldUpdateCache)
 	{
 		UpdateCache(id, animationData);
 		Game::instance.ResetPhysicalReloadState();
-	}
-	else if (bShouldUpdateCache && cachedViewModel.rightWristIndex < 0)
-	{
-		UpdateCache(id, animationData);
 	}
 
 	ApplyPhysicalReloadBonePin(id, boneTransforms);
@@ -488,6 +672,11 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 		{
 			const int16_t boneIndex = bonesToProcess[i];
 			i++;
+			if (boneIndex < 0 || boneIndex >= animationData->NumBones || boneIndex >= 64)
+			{
+				continue;
+			}
+
 			const Bone& currentBone = boneArray[boneIndex];
 			Transform* parentTransform = boneIndex == 0 ? &root : &outBoneTransforms[currentBone.Parent];
 			const TransformQuat* currentQuat = &boneTransforms[boneIndex];
@@ -687,12 +876,12 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 			}
 #endif
 
-			if (currentBone.LeftLeaf != -1)
+			if (currentBone.LeftLeaf != -1 && lastIndex < 64)
 			{
 				bonesToProcess[lastIndex] = currentBone.LeftLeaf;
 				lastIndex++;
 			}
-			if (currentBone.RightLeaf != -1)
+			if (currentBone.RightLeaf != -1 && lastIndex < 64)
 			{
 				bonesToProcess[lastIndex] = currentBone.RightLeaf;
 				lastIndex++;
@@ -799,7 +988,7 @@ void WeaponHandler::MoveBoneToTransform(int boneIndex, const Matrix4& newTransfo
 
 void WeaponHandler::LogViewModelBoneHierarchyNode(Bone* boneArray, int numBones, int boneIndex, int depth) const
 {
-	if (boneIndex < 0 || boneIndex >= numBones)
+	if (boneIndex < 0 || boneIndex >= numBones || depth > 64)
 	{
 		return;
 	}
@@ -874,6 +1063,12 @@ void WeaponHandler::LogViewModelBoneHierarchy(AssetData_ModelAnimations* animati
 
 void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animationData)
 {
+	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0 || animationData->NumBones > 256)
+	{
+		Logger::log << "[UpdateCache] Invalid animation data for asset " << id << std::endl;
+		return;
+	}
+
 #if DRAW_DEBUG_AIM
 	Logger::log << "[UpdateCache] Swapped weapons, recaching " << id << std::endl;
 #endif
@@ -886,6 +1081,8 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	cachedViewModel.magazineRootBoneIndex = -1;
 	cachedViewModel.reloadEmptyAnimIndex = -1;
 	cachedViewModel.reloadExitEmptyAnimIndex = -1;
+	cachedViewModel.reloadFullAnimIndex = -1;
+	cachedViewModel.reloadExitFullAnimIndex = -1;
 	memset(cachedViewModel.magazineHideBones, 0, sizeof(cachedViewModel.magazineHideBones));
 
 	Bone* boneArray = animationData->BoneArray;
@@ -910,12 +1107,28 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 		{
 			cachedViewModel.reloadExitEmptyAnimIndex = i;
 		}
+
+		if (cachedViewModel.reloadFullAnimIndex < 0
+			&& (strstr(animName, "reload-full") || strstr(animName, "reload full")))
+		{
+			cachedViewModel.reloadFullAnimIndex = i;
+		}
+
+		if (cachedViewModel.reloadExitFullAnimIndex < 0
+			&& (strstr(animName, "exit-full") || strstr(animName, "exit full")
+				|| strstr(animName, "exit_full") || strstr(animName, "reload-exit-full")))
+		{
+			cachedViewModel.reloadExitFullAnimIndex = i;
+		}
 	}
 
-	if (cachedViewModel.reloadEmptyAnimIndex >= 0 || cachedViewModel.reloadExitEmptyAnimIndex >= 0)
+	if (cachedViewModel.reloadEmptyAnimIndex >= 0 || cachedViewModel.reloadExitEmptyAnimIndex >= 0
+		|| cachedViewModel.reloadFullAnimIndex >= 0 || cachedViewModel.reloadExitFullAnimIndex >= 0)
 	{
 		Logger::log << "[WeaponHandler] Reload anim indices: empty=" << cachedViewModel.reloadEmptyAnimIndex
-			<< " exitEmpty=" << cachedViewModel.reloadExitEmptyAnimIndex << std::endl;
+			<< " exitEmpty=" << cachedViewModel.reloadExitEmptyAnimIndex
+			<< " full=" << cachedViewModel.reloadFullAnimIndex
+			<< " exitFull=" << cachedViewModel.reloadExitFullAnimIndex << std::endl;
 	}
 
 	for (int i = 0; i < animationData->NumBones; i++)
@@ -992,8 +1205,45 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 		const char* rootName = cachedViewModel.magazineRootBoneIndex >= 0
 			? boneArray[cachedViewModel.magazineRootBoneIndex].BoneName
 			: "unknown";
+
+		if (cachedViewModel.magazineRootBoneIndex >= 0)
+		{
+			MarkMagazineDescendants(boneArray, animationData->NumBones, cachedViewModel.magazineRootBoneIndex);
+		}
+
+		// Also pick up any bones parented under an already-marked magazine bone.
+		bool bMarkChanged = true;
+		while (bMarkChanged)
+		{
+			bMarkChanged = false;
+			for (int i = 0; i < animationData->NumBones && i < 64; i++)
+			{
+				if (cachedViewModel.magazineHideBones[i])
+				{
+					continue;
+				}
+
+				const int parentIndex = boneArray[i].Parent;
+				if (parentIndex >= 0 && parentIndex < 64 && cachedViewModel.magazineHideBones[parentIndex])
+				{
+					MarkMagazineBone(i);
+					bMarkChanged = true;
+				}
+			}
+		}
+
+		int markedBoneCount = 0;
+		for (int i = 0; i < 64; i++)
+		{
+			if (cachedViewModel.magazineHideBones[i])
+			{
+				markedBoneCount++;
+			}
+		}
+
 		Logger::log << "[WeaponHandler] Magazine bone cached: index "
-			<< cachedViewModel.magazineRootBoneIndex << " (\"" << rootName << "\")" << std::endl;
+			<< cachedViewModel.magazineRootBoneIndex << " (\"" << rootName << "\")"
+			<< " markedBones=" << markedBoneCount << std::endl;
 	}
 
 	{

@@ -79,6 +79,10 @@ public:
 	int GetPhysicalReloadResumeFrame() const;
 	int GetReloadEmptyAnimIndex() const;
 	int GetReloadExitEmptyAnimIndex() const;
+	int GetReloadFullAnimIndex() const;
+	int GetReloadExitFullAnimIndex() const;
+	int GetActiveReloadAnimIndex() const;
+	int GetActiveReloadExitAnimIndex() const;
 	WeaponType GetCachedWeaponType() const;
 	bool IsLocalMagazineEmpty() const;
 	bool HasMagazineBones() const;
@@ -128,6 +132,7 @@ public:
 	bool bMagazineEjected = false;  // True when reload animation reached the eject pause point
 	bool bMagazineGrabbed = false;  // True when player is holding the ejected mag
 	bool bManualPhysicalReloadPending = false;
+	bool bPhysicalReloadFromEmpty = false;
 	EPhysicalReloadPhase physicalReloadPhase = EPhysicalReloadPhase::Idle;
 	uint16_t pausedReloadAnimIndex = 0;
 	uint16_t pausedReloadAnimFrame = 0;
@@ -272,6 +277,7 @@ public:
 	FloatProperty* c_CrouchHeight = nullptr;
 	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
 	BoolProperty* c_LogPhysicalReloadFrames = nullptr;
+	BoolProperty* c_LogPhysicalReloadDebug = nullptr;
 	IntProperty* c_PhysicalReloadEjectFrame_Default = nullptr;
 	IntProperty* c_PhysicalReloadResumeFrame_Default = nullptr;
 	IntProperty* c_PhysicalReloadEjectFrame_Pistol = nullptr;
@@ -279,6 +285,8 @@ public:
 	IntProperty* c_PhysicalReloadEjectFrame_AssaultRifle = nullptr;
 	IntProperty* c_PhysicalReloadResumeFrame_AssaultRifle = nullptr;
 	IntProperty* c_PhysicalReloadEjectTicksFromStart = nullptr;
+	FloatProperty* c_PhysicalReloadSoundStopDelay = nullptr;
+	FloatProperty* c_BeltMagazineHipDrop = nullptr;
 	Vector3Property* c_BeltMagazineOffset = nullptr;
 	FloatProperty* c_BeltMagazineGrabDistance = nullptr;
 	FloatProperty* c_BeltMagazineInsertDistance = nullptr;
