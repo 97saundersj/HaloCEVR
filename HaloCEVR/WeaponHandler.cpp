@@ -6,6 +6,7 @@
 #include "Logger.h"
 #include "Game.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -491,10 +492,34 @@ void WeaponHandler::ClearPhysicalReloadBoneSnapshot()
 	bHasPausedBoneSnapshot = false;
 }
 
-// Physical reload: freeze FP weapon pose at magazine eject by snapshotting/restoring the
-// TransformQuat buffer passed into SetViewModelPosition for the local weapon asset only.
-// See docs/skeleton-pipeline.md — SetViewModelPosition runs once per skeleton pass (weapon,
-// third-person body, etc.); pinning without an asset gate corrupts non-weapon bones.
+void WeaponHandler::ResetPhysicalReloadBonePinState()
+{
+	ClearPhysicalReloadBoneSnapshot();
+	reloadReplayCount = 0;
+	reloadRecordComplete = false;
+	reloadRecordTargetSeconds = 0.0f;
+	reloadPauseStartSeconds = -1.0;
+	reloadReplayStartSeconds = -1.0;
+	bReloadReplaying = false;
+	bReloadReplayComplete = false;
+	lastBonePinPhase = 0; // EPhysicalReloadPhase::Idle
+}
+
+static double GetPhysicalReloadClockSeconds()
+{
+	using namespace std::chrono;
+	return duration<double>(steady_clock::now().time_since_epoch()).count();
+}
+
+// Physical reload bone record/replay.
+// SetViewModelPosition runs once per skeleton pass; we only touch the local weapon asset (gated
+// by currentAsset/rightWristIndex) so non-weapon skeletons are untouched (see skeleton-pipeline.md).
+//
+// PausedAtEject: snapshot the eject pose and keep displaying it, while recording the live clip's
+//   remaining bone stream (it keeps running underneath on the engine's own clock) up to roughly the
+//   real remaining reload duration.
+// PlayingFinish: replay the recorded frames over real time so the rest of the reload animates,
+//   instead of releasing to the already-finished final pose.
 void WeaponHandler::ApplyPhysicalReloadBonePin(const HaloID& id, TransformQuat* boneTransforms)
 {
 	if (cachedViewModel.currentAsset != id || cachedViewModel.rightWristIndex < 0)
@@ -502,20 +527,96 @@ void WeaponHandler::ApplyPhysicalReloadBonePin(const HaloID& id, TransformQuat* 
 		return;
 	}
 
-	const EPhysicalReloadPhase phase = Game::instance.physicalReloadPhase;
+	const int phase = static_cast<int>(Game::instance.physicalReloadPhase);
+	const int kPausedAtEject = static_cast<int>(EPhysicalReloadPhase::PausedAtEject);
+	const int kPlayingFinish = static_cast<int>(EPhysicalReloadPhase::PlayingFinish);
+	const double now = GetPhysicalReloadClockSeconds();
 
-	if (phase == EPhysicalReloadPhase::PausedAtEject)
+	if (phase == kPausedAtEject)
 	{
 		if (!bHasPausedBoneSnapshot)
 		{
+			// First eject frame: this pose is the eject point. Snapshot it for the frozen display
+			// and seed the recording with it as frame 0 (t = 0).
 			memcpy(pausedBoneTransforms, boneTransforms, sizeof(pausedBoneTransforms));
 			bHasPausedBoneSnapshot = true;
+
+			memcpy(reloadReplayFrames[0], boneTransforms, sizeof(reloadReplayFrames[0]));
+			reloadReplayTimes[0] = 0.0f;
+			reloadReplayCount = 1;
+			reloadRecordComplete = false;
+			reloadPauseStartSeconds = now;
+
+			// Capture roughly the real remaining reload time so playback matches the engine's
+			// reload timer during PlayingFinish (30 ticks/sec), with a small tail margin.
+			const float remainingTicks = static_cast<float>(Game::instance.frozenReloadRemaining);
+			reloadRecordTargetSeconds = std::min(4.0f, std::max(0.5f, remainingTicks / 30.0f + 0.15f));
 		}
 		else
 		{
+			// Keep recording the live clip until we've captured the rest of the reload.
+			if (!reloadRecordComplete)
+			{
+				const float elapsed = static_cast<float>(now - reloadPauseStartSeconds);
+				const float lastSampleTime = reloadReplayTimes[reloadReplayCount - 1];
+				// Throttle to ~130 Hz so the fixed buffer always spans the target duration.
+				const bool spacedEnough = (elapsed - lastSampleTime) >= (1.0f / 130.0f);
+
+				if (reloadReplayCount >= kMaxReloadReplayFrames || elapsed >= reloadRecordTargetSeconds)
+				{
+					reloadRecordComplete = true;
+				}
+				else if (spacedEnough)
+				{
+					memcpy(reloadReplayFrames[reloadReplayCount], boneTransforms, sizeof(reloadReplayFrames[0]));
+					reloadReplayTimes[reloadReplayCount] = elapsed;
+					reloadReplayCount++;
+				}
+			}
+
+			// Always display the frozen eject pose during the hold.
 			memcpy(boneTransforms, pausedBoneTransforms, sizeof(pausedBoneTransforms));
 		}
 	}
+	else if (phase == kPlayingFinish)
+	{
+		// Initialise playback on entry to PlayingFinish.
+		if (lastBonePinPhase != kPlayingFinish)
+		{
+			reloadReplayStartSeconds = now;
+			bReloadReplayComplete = false;
+			bReloadReplaying = reloadReplayCount > 1;
+		}
+
+		if (bReloadReplaying)
+		{
+			const float t = static_cast<float>(now - reloadReplayStartSeconds);
+			const float lastTime = reloadReplayTimes[reloadReplayCount - 1];
+
+			if (t >= lastTime)
+			{
+				memcpy(boneTransforms, reloadReplayFrames[reloadReplayCount - 1], sizeof(reloadReplayFrames[0]));
+				bReloadReplaying = false;
+				bReloadReplayComplete = true;
+			}
+			else
+			{
+				// Find the recorded frame nearest the elapsed playback time.
+				int idx = reloadReplayCount - 1;
+				for (int i = 1; i < reloadReplayCount; i++)
+				{
+					if (reloadReplayTimes[i] >= t)
+					{
+						idx = i;
+						break;
+					}
+				}
+				memcpy(boneTransforms, reloadReplayFrames[idx], sizeof(reloadReplayFrames[0]));
+			}
+		}
+	}
+
+	lastBonePinPhase = phase;
 }
 
 void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, TransformQuat* boneTransforms, Transform* outBoneTransforms)

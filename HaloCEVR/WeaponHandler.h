@@ -54,7 +54,14 @@ public:
 	int GetActiveReloadAnimIndex() const;
 	int GetActiveReloadExitAnimIndex() const;
 	WeaponType GetCachedWeaponType() const { return cachedViewModel.weaponType; }
+	// Clears only the frozen eject pose; leaves the recorded replay buffer intact.
 	void ClearPhysicalReloadBoneSnapshot();
+	// Clears snapshot + replay buffer (new reload or full state reset).
+	void ResetPhysicalReloadBonePinState();
+	// True once the recorded "rest of reload" bone playback (PlayingFinish) has reached its end.
+	bool IsReloadReplayComplete() const { return bReloadReplayComplete; }
+	// True when a usable rest-of-reload recording was captured during the eject pause.
+	bool HasReloadReplay() const { return reloadReplayCount > 1; }
 
 	Vector3 localOffset;
 	Vector3 localRotation;
@@ -126,6 +133,24 @@ protected:
 
 	TransformQuat pausedBoneTransforms[64]{};
 	bool bHasPausedBoneSnapshot = false;
+
+	// Physical reload animation record/replay (see ApplyPhysicalReloadBonePin).
+	// The game's first-person reload is a one-shot clip that runs to completion on its own clock
+	// regardless of our timer freeze, and exposes no seekable frame field. So during the eject
+	// pause we capture the live "rest of reload" bone stream (eject -> end) while showing the
+	// frozen eject pose, then replay it over real time on insert so the remainder animates
+	// instead of snapping to the finished pose.
+	static constexpr int kMaxReloadReplayFrames = 320;
+	TransformQuat reloadReplayFrames[kMaxReloadReplayFrames][64]{};
+	float reloadReplayTimes[kMaxReloadReplayFrames]{};
+	int reloadReplayCount = 0;
+	bool reloadRecordComplete = false;
+	float reloadRecordTargetSeconds = 0.0f;
+	double reloadPauseStartSeconds = -1.0;
+	double reloadReplayStartSeconds = -1.0;
+	bool bReloadReplaying = false;
+	bool bReloadReplayComplete = false;
+	int lastBonePinPhase = 0; // EPhysicalReloadPhase as int (enum lives in Game.h, included after)
 
 	// Track previous yaw offset to detect snap turns
 	float lastYawOffset = 0.0f;

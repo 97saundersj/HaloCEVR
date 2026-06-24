@@ -561,35 +561,16 @@ WeaponDynamicObject* InputHandler::GetLocalWeaponObject()
 }
 
 static bool ShouldPausePhysicalReload(
-	uint16_t fpAnimId,
-	uint16_t fpAnimFrame,
-	int reloadEmptyAnimIndex,
-	int ejectFrame,
 	uint16_t initialRemaining,
 	uint16_t currentRemaining,
-	int ejectTicksFromStart)
+	int pauseTicks)
 {
-	if (initialRemaining > currentRemaining && ejectTicksFromStart > 0)
-	{
-		const uint16_t elapsed = initialRemaining - currentRemaining;
-		if (elapsed >= static_cast<uint16_t>(ejectTicksFromStart))
-		{
-			return true;
-		}
-	}
-
-	if (ejectFrame < 0)
+	if (pauseTicks <= 0 || initialRemaining <= currentRemaining)
 	{
 		return false;
 	}
 
-	if (reloadEmptyAnimIndex >= 0)
-	{
-		return fpAnimId == static_cast<uint16_t>(reloadEmptyAnimIndex)
-			&& fpAnimFrame >= static_cast<uint16_t>(ejectFrame);
-	}
-
-	return fpAnimFrame >= static_cast<uint16_t>(ejectFrame);
+	return (initialRemaining - currentRemaining) >= static_cast<uint16_t>(pauseTicks);
 }
 
 void InputHandler::ApplyPhysicalReloadAnimPin()
@@ -682,8 +663,13 @@ void InputHandler::UpdateReloadAnimationPause()
 			|| (currentPhase == EPhysicalReloadPhase::PausedAtEject && logFrameCounter % 30 == 0)
 			|| currentPhase == EPhysicalReloadPhase::PlayingFinish))
 	{
+		const uint16_t reloadElapsed = Game::instance.initialReloadRemaining > weaponObject->weaponData[0].reloadRemaining
+			? Game::instance.initialReloadRemaining - weaponObject->weaponData[0].reloadRemaining
+			: 0;
 		Logger::log << "[PhysicalReload] weapon=" << static_cast<int>(Game::instance.GetCachedWeaponType())
 			<< " phase=" << static_cast<int>(currentPhase)
+			<< " pauseTicks=" << Game::instance.GetPhysicalReloadPauseTicks()
+			<< " reloadElapsed=" << reloadElapsed
 			<< " fpAnim=" << fpAnimId
 			<< " fpFrame=" << fpAnimFrame
 			<< " reloadEmptyIdx=" << Game::instance.GetActiveReloadAnimIndex()
@@ -707,32 +693,27 @@ void InputHandler::UpdateReloadAnimationPause()
 			Game::instance.initialReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
 		}
 
-		const int ejectFrame = Game::instance.GetPhysicalReloadEjectFrame();
+		const int pauseTicks = Game::instance.GetPhysicalReloadPauseTicks();
 		const int reloadAnimIndex = Game::instance.GetActiveReloadAnimIndex();
-		const int ejectTicksFromStart = Game::instance.c_PhysicalReloadEjectTicksFromStart->Value();
 
 		if (ShouldPausePhysicalReload(
-			fpAnimId,
-			fpAnimFrame,
-			reloadAnimIndex,
-			ejectFrame,
 			Game::instance.initialReloadRemaining,
 			weaponObject->weaponData[0].reloadRemaining,
-			ejectTicksFromStart))
+			pauseTicks))
 		{
-			const int configuredEjectFrame = ejectFrame >= 0 ? ejectFrame : 0;
 			Game::instance.pausedReloadAnimIndex = reloadAnimIndex >= 0
 				? static_cast<uint16_t>(reloadAnimIndex)
 				: fpAnimId;
-			Game::instance.pausedReloadAnimFrame = static_cast<uint16_t>(configuredEjectFrame);
+			Game::instance.pausedReloadAnimFrame = static_cast<uint16_t>(pauseTicks);
 			Game::instance.frozenReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
 			Game::instance.physicalReloadPhase = EPhysicalReloadPhase::PausedAtEject;
 			Game::instance.bMagazineEjected = true;
-			Game::instance.ClearPhysicalReloadBoneSnapshot();
+			Game::instance.ResetPhysicalReloadBonePinState();
 			if (Game::instance.c_LogPhysicalReloadDebug->Value())
 			{
 				const Vector3 beltPos = Game::instance.GetBeltMagazineWorldPosition();
-				Logger::log << "[PhysicalReload] paused at eject beltPos=("
+				Logger::log << "[PhysicalReload] paused at eject pauseTicks=" << pauseTicks
+					<< " beltPos=("
 					<< beltPos.x << "," << beltPos.y << "," << beltPos.z << ")"
 					<< std::endl;
 			}
@@ -763,12 +744,20 @@ void InputHandler::UpdateReloadAnimationPause()
 			finishFrameCounter++;
 		}
 
-		// Pausing mid state-1 skips the normal transition that refills ammo via ReloadEnd.
-		constexpr int kFinishReloadTicks = 15;
+		// The remaining reload now plays over its real duration, so wait for natural completion.
+		// Pausing mid-reload can skip the engine's transition that refills ammo via ReloadEnd, so
+		// trigger it ourselves once the timer is done. The safety timeout is sized to the captured
+		// real remaining (ticks), with a large margin since render frames run >= game ticks.
+		const int safetyFrames = static_cast<int>(Game::instance.frozenReloadRemaining) * 6 + 60;
 		const bool bTimerDone = weapon.reloadRemaining == 0 || weapon.reloadState == 0;
-		const bool bFinishTimedOut = finishFrameCounter >= kFinishReloadTicks + 5;
+		const bool bFinishTimedOut = finishFrameCounter >= safetyFrames;
 
-		if (weapon.ammo == 0 && (bTimerDone || bFinishTimedOut))
+		// When a rest-of-reload recording is playing back, also wait for the visual to finish so the
+		// ammo refill lands as the animation completes (not before). The safety timeout is the cap.
+		const bool bHasReplay = Game::instance.HasPhysicalReloadReplay();
+		const bool bVisualDone = !bHasReplay || Game::instance.IsPhysicalReloadReplayComplete();
+
+		if (weapon.ammo == 0 && ((bTimerDone && bVisualDone) || bFinishTimedOut))
 		{
 			Game::instance.TriggerWeaponReloadEnd();
 		}
@@ -812,42 +801,32 @@ void InputHandler::ResumePhysicalReloadAnimation()
 		return;
 	}
 
-	const int resumeFrame = Game::instance.GetPhysicalReloadResumeFrame();
-	const int exitAnimIndex = Game::instance.GetActiveReloadExitAnimIndex();
-	const int reloadAnimIndex = Game::instance.GetActiveReloadAnimIndex();
-
-	if (Helpers::HasFirstPersonAnimBase())
+	// Restore the real remaining reload time that was captured at eject and held during the
+	// pause, so the game animates the rest of the reload from the eject point at normal speed
+	// (instead of snapping the anim and compressing the remainder into a short fixed finish).
+	// reloadState is left as-is (the loading state from the pin) so the reload simply continues.
+	// frozenReloadRemaining is intentionally NOT cleared here - the PlayingFinish watchdog reads
+	// it; ResetPhysicalReloadState clears it once the reload fully completes.
+	const uint16_t realRemaining = Game::instance.frozenReloadRemaining;
+	if (realRemaining > 0)
 	{
-		if (exitAnimIndex >= 0)
-		{
-			Helpers::SetFirstPersonBaseAnimId(static_cast<uint16_t>(exitAnimIndex));
-			Helpers::SetFirstPersonBaseAnimFrame(0);
-		}
-		else if (reloadAnimIndex >= 0)
-		{
-			Helpers::SetFirstPersonBaseAnimId(static_cast<uint16_t>(reloadAnimIndex));
-			if (resumeFrame >= 0)
-			{
-				Helpers::SetFirstPersonBaseAnimFrame(static_cast<uint16_t>(resumeFrame));
-			}
-		}
-		else if (resumeFrame >= 0)
-		{
-			Helpers::SetFirstPersonBaseAnimFrame(static_cast<uint16_t>(resumeFrame));
-		}
+		weaponObject->weaponData[0].reloadRemaining = realRemaining;
 	}
-
-	constexpr uint16_t kFinishReloadTicks = 15;
-	weaponObject->weaponData[0].reloadRemaining = kFinishReloadTicks;
-	weaponObject->weaponData[0].reloadState = 2;
 
 	Helpers::ClearPhysicalReloadSounds();
 
 	Game::instance.physicalReloadPhase = EPhysicalReloadPhase::PlayingFinish;
 	Game::instance.bMagazineGrabbed = false;
 	Game::instance.bMagazineEjected = false;
-	Game::instance.frozenReloadRemaining = 0;
+	// Stop showing the frozen eject pose only; keep reloadReplayFrames for playback.
 	Game::instance.ClearPhysicalReloadBoneSnapshot();
+
+	if (Game::instance.c_LogPhysicalReloadDebug && Game::instance.c_LogPhysicalReloadDebug->Value())
+	{
+		Logger::log << "[PhysicalReload] resume replay frames="
+			<< (Game::instance.HasPhysicalReloadReplay() ? "yes" : "no")
+			<< std::endl;
+	}
 }
 
 void InputHandler::HandlePhysicalMagazineGrabInsert()
