@@ -1251,8 +1251,8 @@ void Game::SetupConfigs()
 	c_PhysicalReloadPauseTicks_Default = config.RegisterInt("PhysicalReloadPauseTicks_Default", "Reload ticks after reload starts before the animation pauses at magazine eject (30 ticks = 1 second). Used for weapons without a specific entry. On insert, animation continues from this same point.", 10);
 	c_PhysicalReloadPauseTicks_Pistol = config.RegisterInt("PhysicalReloadPauseTicks_Pistol", "Eject pause tick for the M6D pistol", 25);
 	c_PhysicalReloadPauseTicks_AssaultRifle = config.RegisterInt("PhysicalReloadPauseTicks_AssaultRifle", "Eject pause tick for the MA5B assault rifle", 40);
-	c_PhysicalReloadPauseTicks_Shotgun = config.RegisterInt("PhysicalReloadPauseTicks_Shotgun", "Eject pause tick for the M90 shotgun", 14);
-	c_PhysicalReloadPauseTicks_Sniper = config.RegisterInt("PhysicalReloadPauseTicks_Sniper", "Eject pause tick for the SRS99C sniper rifle", 20);
+	c_PhysicalReloadPauseTicks_Shotgun = config.RegisterInt("PhysicalReloadPauseTicks_Shotgun", "Eject pause tick for the M90 shotgun", 15);
+	c_PhysicalReloadPauseTicks_Sniper = config.RegisterInt("PhysicalReloadPauseTicks_Sniper", "Eject pause tick for the SRS99C sniper rifle", 35);
 	c_PhysicalReloadSoundStopDelay = config.RegisterFloat("PhysicalReloadSoundStopDelay", "Seconds to let the reload sound keep playing after the animation pauses at eject, so you hear the start of the reload before it goes quiet", 0.1f);
 	c_BeltMagazineHipDrop = config.RegisterFloat("BeltMagazineHipDrop", "How far below the camera (world units) the belt magazine sits. Feet marker uses 0.62; hip is typically 0.18-0.28", 0.2f);
 	c_BeltMagazineOffset = config.RegisterVector3("BeltMagazineOffset", "Fine-tune (forward, left) offset of the spare magazine on your belt in metres, relative to hip height below the camera", Vector3(0.05f, 0.28f, 0.0f));
