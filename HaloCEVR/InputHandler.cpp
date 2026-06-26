@@ -669,6 +669,7 @@ void InputHandler::UpdateReloadAnimationPause()
 		Logger::log << "[PhysicalReload] weapon=" << static_cast<int>(Game::instance.GetCachedWeaponType())
 			<< " phase=" << static_cast<int>(currentPhase)
 			<< " pauseTicks=" << Game::instance.GetPhysicalReloadPauseTicks()
+			<< " resumeTicks=" << Game::instance.GetPhysicalReloadResumeTicks()
 			<< " reloadElapsed=" << reloadElapsed
 			<< " fpAnim=" << fpAnimId
 			<< " fpFrame=" << fpAnimFrame
@@ -801,16 +802,22 @@ void InputHandler::ResumePhysicalReloadAnimation()
 		return;
 	}
 
-	// Restore the real remaining reload time that was captured at eject and held during the
-	// pause, so the game animates the rest of the reload from the eject point at normal speed
-	// (instead of snapping the anim and compressing the remainder into a short fixed finish).
-	// reloadState is left as-is (the loading state from the pin) so the reload simply continues.
-	// frozenReloadRemaining is intentionally NOT cleared here - the PlayingFinish watchdog reads
-	// it; ResetPhysicalReloadState clears it once the reload fully completes.
+	// Restore the remaining reload time from the resume tick (skipping the virtual insert segment).
+	// reloadState is left as-is so the reload simply continues from the chamber/finish portion.
+	const int pauseTicks = Game::instance.GetPhysicalReloadPauseTicks();
+	const int resumeTicks = Game::instance.GetPhysicalReloadResumeTicks();
+	const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
+	const float skipSeconds = static_cast<float>(skipTicks) / 30.0f;
+	Game::instance.SetPhysicalReloadReplaySkipSeconds(skipSeconds);
+
 	const uint16_t realRemaining = Game::instance.frozenReloadRemaining;
 	if (realRemaining > 0)
 	{
-		weaponObject->weaponData[0].reloadRemaining = realRemaining;
+		const uint16_t shortenedRemaining = realRemaining > static_cast<uint16_t>(skipTicks)
+			? static_cast<uint16_t>(realRemaining - skipTicks)
+			: 1;
+		weaponObject->weaponData[0].reloadRemaining = shortenedRemaining;
+		Game::instance.frozenReloadRemaining = shortenedRemaining;
 	}
 
 	Helpers::ClearPhysicalReloadSounds();
@@ -823,8 +830,8 @@ void InputHandler::ResumePhysicalReloadAnimation()
 
 	if (Game::instance.c_LogPhysicalReloadDebug && Game::instance.c_LogPhysicalReloadDebug->Value())
 	{
-		Logger::log << "[PhysicalReload] resume replay frames="
-			<< (Game::instance.HasPhysicalReloadReplay() ? "yes" : "no")
+		Logger::log << "[PhysicalReload] resume skipTicks=" << skipTicks
+			<< " replay=" << (Game::instance.HasPhysicalReloadReplay() ? "yes" : "no")
 			<< std::endl;
 	}
 }

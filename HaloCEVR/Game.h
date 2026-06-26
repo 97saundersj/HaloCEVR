@@ -77,6 +77,8 @@ public:
 	void ClearPhysicalReloadBoneSnapshot();
 	void ResetPhysicalReloadBonePinState();
 	int GetPhysicalReloadPauseTicks() const;
+	int GetPhysicalReloadResumeTicks() const;
+	void SetPhysicalReloadReplaySkipSeconds(float skipSeconds);
 	int GetReloadEmptyAnimIndex() const;
 	int GetReloadExitEmptyAnimIndex() const;
 	int GetReloadFullAnimIndex() const;
@@ -285,6 +287,11 @@ public:
 	IntProperty* c_PhysicalReloadPauseTicks_AssaultRifle = nullptr;
 	IntProperty* c_PhysicalReloadPauseTicks_Shotgun = nullptr;
 	IntProperty* c_PhysicalReloadPauseTicks_Sniper = nullptr;
+	IntProperty* c_PhysicalReloadResumeTicks_Default = nullptr;
+	IntProperty* c_PhysicalReloadResumeTicks_Pistol = nullptr;
+	IntProperty* c_PhysicalReloadResumeTicks_AssaultRifle = nullptr;
+	IntProperty* c_PhysicalReloadResumeTicks_Shotgun = nullptr;
+	IntProperty* c_PhysicalReloadResumeTicks_Sniper = nullptr;
 	FloatProperty* c_PhysicalReloadSoundStopDelay = nullptr;
 	FloatProperty* c_BeltMagazineHipDrop = nullptr;
 	Vector3Property* c_BeltMagazineOffset = nullptr;

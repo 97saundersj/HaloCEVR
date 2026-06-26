@@ -58,10 +58,14 @@ public:
 	void ClearPhysicalReloadBoneSnapshot();
 	// Clears snapshot + replay buffer (new reload or full state reset).
 	void ResetPhysicalReloadBonePinState();
+	// Clears the mag-well insert target captured at reload start.
+	void ClearReloadStartInsertSocket();
 	// True once the recorded "rest of reload" bone playback (PlayingFinish) has reached its end.
 	bool IsReloadReplayComplete() const { return bReloadReplayComplete; }
 	// True when a usable rest-of-reload recording was captured during the eject pause.
 	bool HasReloadReplay() const { return reloadReplayCount > 1; }
+	// Seconds into the recorded reload to begin playback (skips virtual mag insert on resume).
+	void SetReloadReplaySkipSeconds(float skipSeconds);
 
 	Vector3 localOffset;
 	Vector3 localRotation;
@@ -84,6 +88,8 @@ protected:
 	void MarkMagazineBone(int boneIndex);
 	void MarkMagazineDescendants(struct Bone* boneArray, int numBones, int rootIndex);
 	void UpdatePhysicalMagazinePlacement(const HaloID& id, struct Transform* outBoneTransforms);
+	void CaptureReloadStartInsertSocket(const struct Transform* outBoneTransforms);
+	void UpdateInsertSocketFromGun(const struct Transform* outBoneTransforms);
 	void RelocateMagazineBones(struct Transform* outBoneTransforms, const Vector3& targetRootPos, const class Matrix4& targetRootOrientation);
 	Matrix4 GetDetachedMagazineOrientation() const;
 	void ApplyMatrixToTransform(const class Matrix4& matrix, struct Transform& outTransform) const;
@@ -148,9 +154,14 @@ protected:
 	float reloadRecordTargetSeconds = 0.0f;
 	double reloadPauseStartSeconds = -1.0;
 	double reloadReplayStartSeconds = -1.0;
+	float reloadReplaySkipSeconds = 0.0f;
 	bool bReloadReplaying = false;
 	bool bReloadReplayComplete = false;
 	int lastBonePinPhase = 0; // EPhysicalReloadPhase as int (enum lives in Game.h, included after)
+
+	// Magazine position in frame-gun local space at reload start (mag seated in well).
+	bool bHasReloadStartMagSocket = false;
+	Vector3 reloadStartMagLocalOffset{};
 
 	// Track previous yaw offset to detect snap turns
 	float lastYawOffset = 0.0f;

@@ -411,19 +411,6 @@ void WeaponHandler::UpdatePhysicalMagazinePlacement(const HaloID& id, Transform*
 		return;
 	}
 
-	if (cachedViewModel.magazineRootBoneIndex >= 0)
-	{
-		cachedViewModel.magazineSocketPosition = outBoneTransforms[cachedViewModel.magazineRootBoneIndex].translation;
-	}
-	else
-	{
-		const int rootIndex = ResolveMagazineRootBoneIndex();
-		if (rootIndex >= 0)
-		{
-			cachedViewModel.magazineSocketPosition = outBoneTransforms[rootIndex].translation;
-		}
-	}
-
 	const Vector3 targetPos = Game::instance.bMagazineGrabbed
 		? GetOffHandWorldPosition() + GetMagazineGripWorldOffset()
 		: GetBeltMagazineWorldPosition();
@@ -500,6 +487,7 @@ void WeaponHandler::ResetPhysicalReloadBonePinState()
 	reloadRecordTargetSeconds = 0.0f;
 	reloadPauseStartSeconds = -1.0;
 	reloadReplayStartSeconds = -1.0;
+	reloadReplaySkipSeconds = 0.0f;
 	bReloadReplaying = false;
 	bReloadReplayComplete = false;
 	lastBonePinPhase = 0; // EPhysicalReloadPhase::Idle
@@ -518,8 +506,99 @@ static double GetPhysicalReloadClockSeconds()
 // PausedAtEject: snapshot the eject pose and keep displaying it, while recording the live clip's
 //   remaining bone stream (it keeps running underneath on the engine's own clock) up to roughly the
 //   real remaining reload duration.
-// PlayingFinish: replay the recorded frames over real time so the rest of the reload animates,
-//   instead of releasing to the already-finished final pose.
+// PlayingFinish: replay from the resume tick (skipping the virtual insert segment) so only
+//   chamber/finish animates after the player inserts the magazine.
+void WeaponHandler::ClearReloadStartInsertSocket()
+{
+	bHasReloadStartMagSocket = false;
+	reloadStartMagLocalOffset = Vector3(0.0f, 0.0f, 0.0f);
+}
+
+void WeaponHandler::SetReloadReplaySkipSeconds(float skipSeconds)
+{
+	reloadReplaySkipSeconds = std::max(0.0f, skipSeconds);
+}
+
+void WeaponHandler::CaptureReloadStartInsertSocket(const Transform* outBoneTransforms)
+{
+	if (bHasReloadStartMagSocket)
+	{
+		return;
+	}
+
+	const int gunIndex = cachedViewModel.gunIndex;
+	const int magIndex = ResolveMagazineRootBoneIndex();
+	if (gunIndex < 0 || magIndex < 0)
+	{
+		return;
+	}
+
+	Matrix4 gunMatrix;
+	Transform gunTransform = outBoneTransforms[gunIndex];
+	TransformToMatrix4(gunTransform, gunMatrix);
+
+	Matrix4 gunInverse = gunMatrix;
+	gunInverse.invertAffine();
+
+	reloadStartMagLocalOffset = gunInverse * outBoneTransforms[magIndex].translation;
+	bHasReloadStartMagSocket = true;
+
+	if (Game::instance.c_LogPhysicalReloadDebug->Value())
+	{
+		Logger::log << "[PhysicalReload:Insert] captured mag-well offset from reload start"
+			<< " gunBone=" << gunIndex
+			<< " magBone=" << magIndex
+			<< " localOffset=("
+			<< reloadStartMagLocalOffset.x << ","
+			<< reloadStartMagLocalOffset.y << ","
+			<< reloadStartMagLocalOffset.z << ")"
+			<< std::endl;
+	}
+}
+
+void WeaponHandler::UpdateInsertSocketFromGun(const Transform* outBoneTransforms)
+{
+	if (!bHasReloadStartMagSocket)
+	{
+		return;
+	}
+
+	const int gunIndex = cachedViewModel.gunIndex;
+	if (gunIndex < 0)
+	{
+		return;
+	}
+
+	Matrix4 gunMatrix;
+	Transform gunTransform = outBoneTransforms[gunIndex];
+	TransformToMatrix4(gunTransform, gunMatrix);
+	cachedViewModel.magazineSocketPosition = gunMatrix * reloadStartMagLocalOffset;
+
+	if (Game::instance.c_LogPhysicalReloadDebug->Value())
+	{
+		static int debugLogCounter = 0;
+		if (debugLogCounter++ % 30 == 0)
+		{
+			Logger::log << "[PhysicalReload:Insert] socket from reload-start mag-well"
+				<< " pos=("
+				<< cachedViewModel.magazineSocketPosition.x << ","
+				<< cachedViewModel.magazineSocketPosition.y << ","
+				<< cachedViewModel.magazineSocketPosition.z << ")"
+				<< std::endl;
+		}
+
+		const Vector3 up(0.0f, 0.0f, 1.0f);
+		Game::instance.inGameRenderer.DrawPolygon(
+			cachedViewModel.magazineSocketPosition,
+			Vector3(1.0f, 0.0f, 0.0f),
+			up,
+			6,
+			Game::instance.MetresToWorld(0.05f),
+			D3DCOLOR_ARGB(200, 0, 180, 255),
+			false);
+	}
+}
+
 void WeaponHandler::ApplyPhysicalReloadBonePin(const HaloID& id, TransformQuat* boneTransforms)
 {
 	if (cachedViewModel.currentAsset != id || cachedViewModel.rightWristIndex < 0)
@@ -583,9 +662,17 @@ void WeaponHandler::ApplyPhysicalReloadBonePin(const HaloID& id, TransformQuat* 
 		// Initialise playback on entry to PlayingFinish.
 		if (lastBonePinPhase != kPlayingFinish)
 		{
-			reloadReplayStartSeconds = now;
+			reloadReplayStartSeconds = now - reloadReplaySkipSeconds;
 			bReloadReplayComplete = false;
-			bReloadReplaying = reloadReplayCount > 1;
+
+			const float lastTime = reloadReplayCount > 0
+				? reloadReplayTimes[reloadReplayCount - 1]
+				: 0.0f;
+			bReloadReplaying = reloadReplayCount > 1 && reloadReplaySkipSeconds < lastTime;
+			if (reloadReplayCount > 1 && reloadReplaySkipSeconds >= lastTime)
+			{
+				bReloadReplayComplete = true;
+			}
 		}
 
 		if (bReloadReplaying)
@@ -989,6 +1076,16 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 			}
 
 		} while (i != lastIndex);
+	}
+
+	const EPhysicalReloadPhase reloadPhase = Game::instance.physicalReloadPhase;
+	if (reloadPhase == EPhysicalReloadPhase::PlayingEject)
+	{
+		CaptureReloadStartInsertSocket(outBoneTransforms);
+	}
+	else if (reloadPhase == EPhysicalReloadPhase::PausedAtEject)
+	{
+		UpdateInsertSocketFromGun(outBoneTransforms);
 	}
 
 	UpdatePhysicalMagazinePlacement(id, outBoneTransforms);
