@@ -1286,7 +1286,7 @@ void Game::SetupConfigs()
 	c_BeltMagazineOffset = config.RegisterVector3("BeltMagazineOffset", "Fine-tune (forward, left) offset of the spare magazine on your belt in metres, relative to hip height below the camera", Vector3(0.05f, 0.28f, 0.0f));
 	c_BeltMagazineGrabDistance = config.RegisterFloat("BeltMagazineGrabDistance", "How close the off-hand must be to the belt magazine to grab it (metres)", 0.1f);
 	c_BeltMagazineInsertDistance = config.RegisterFloat("BeltMagazineInsertDistance", "How close the off-hand must be to the weapon magazine socket to insert and reload (metres)", 0.1f);
-	c_MagazineGripControllerOffset = config.RegisterVector3("MagazineGripControllerOffset", "Magazine hold position (forward, left, up in metres) relative to the off-hand controller", Vector3(0.08f, -0.03f, 0.08f));
+	c_MagazineGripControllerOffset = config.RegisterVector3("MagazineGripControllerOffset", "Global fine-tune offset (forward, left, up in metres) applied in controller-local space after the animation-derived grip pose", Vector3(0.0f, 0.0f, 0.0f));
 	// Misc settings
 	c_ShowRoomCentre = config.RegisterBool("ShowRoomCentre", "Draw an indicator at your feet to show where the player character is actually positioned", true);
 	c_d3d9Path = config.RegisterString("CustomD3D9Path", "If set first try to load d3d9.dll from the specified path instead of from system32", "");

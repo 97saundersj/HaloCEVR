@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include "Maths/Vectors.h"
 #include "Maths/Matrices.h"
 #include "Helpers/Maths.h"
@@ -89,9 +90,12 @@ protected:
 	void MarkMagazineDescendants(struct Bone* boneArray, int numBones, int rootIndex);
 	void UpdatePhysicalMagazinePlacement(const HaloID& id, struct Transform* outBoneTransforms);
 	void CaptureReloadStartInsertSocket(const struct Transform* outBoneTransforms);
+	// Samples the resume-tick animation (from the replay buffer) to derive the magazine-in-wrist-space transform.
+	void CaptureGripFromResumePose(struct HaloID& id, struct Vector3* pos, struct Vector3* facing, struct Vector3* up);
+	bool GetGrabbedMagazineTargetMatrix(const struct Transform* outBoneTransforms, Matrix4& outTargetMatrix) const;
 	void UpdateInsertSocketFromGun(const struct Transform* outBoneTransforms);
 	void RelocateMagazineBones(struct Transform* outBoneTransforms, const Vector3& targetRootPos, const class Matrix4& targetRootOrientation);
-	Matrix4 GetDetachedMagazineOrientation() const;
+	Matrix4 GetDetachedMagazineOrientation(const struct Transform* outBoneTransforms) const;
 	void ApplyMatrixToTransform(const class Matrix4& matrix, struct Transform& outTransform) const;
 	int ResolveMagazineRootBoneIndex() const;
 	Vector3 GetOffHandWorldPosition() const;
@@ -163,6 +167,11 @@ protected:
 	bool bHasReloadStartMagSocket = false;
 	Vector3 reloadStartMagLocalOffset{};
 
+	// Magazine-bone-in-wrist-local-space, derived from the eject-frame animation.
+	// Captures both translation and rotation so the mag sits exactly as the animation intends.
+	bool bHasCapturedGrip = false;
+	Matrix4 gripFromWristLocal;
+
 	// Track previous yaw offset to detect snap turns
 	float lastYawOffset = 0.0f;
 
@@ -172,4 +181,3 @@ protected:
 	mutable Vector3 lastFireAim;
 #endif
 };
-

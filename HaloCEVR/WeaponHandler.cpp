@@ -3,6 +3,7 @@
 #include "Helpers/Camera.h"
 #include "Helpers/Assets.h"
 #include "Helpers/Maths.h"
+#include "Helpers/FirstPersonAnim.h"
 #include "Logger.h"
 #include "Game.h"
 #include <algorithm>
@@ -301,6 +302,94 @@ Vector3 WeaponHandler::GetMagazineGripWorldOffset() const
 	return worldOffset;
 }
 
+void WeaponHandler::CaptureGripFromResumePose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up)
+{
+	if (bHasCapturedGrip || reloadReplayCount <= 0)
+	{
+		return;
+	}
+
+	const int wristIndex = cachedViewModel.leftWristIndex;
+	const int magIndex = ResolveMagazineRootBoneIndex();
+	if (wristIndex < 0 || magIndex < 0)
+	{
+		return;
+	}
+
+	// Find the replay frame that corresponds to the resume tick.
+	// The replay buffer records the live animation during the eject pause; at the resume tick
+	// the hand is holding the fresh magazine before insertion — the correct grip frame.
+	const int pauseTicks = Game::instance.GetPhysicalReloadPauseTicks();
+	const int resumeTicks = Game::instance.GetPhysicalReloadResumeTicks();
+	const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
+	const float skipSeconds = static_cast<float>(skipTicks) / 30.0f;
+
+	int replayIndex = -1;
+	for (int i = 0; i < reloadReplayCount; i++)
+	{
+		if (reloadReplayTimes[i] >= skipSeconds)
+		{
+			replayIndex = i;
+			break;
+		}
+	}
+
+	if (replayIndex < 0)
+	{
+		return; // Resume frame not yet in the replay buffer; will retry next tick
+	}
+
+	TransformQuat resumeQuats[64]{};
+	memcpy(resumeQuats, reloadReplayFrames[replayIndex], sizeof(resumeQuats));
+
+	// Evaluate in pure animation space (no VR overrides) so the wrist and magazine
+	// positions reflect exactly what the animation intends at this frame.
+	Transform animPoseTransforms[64]{};
+	ReferenceUpdateViewModelImpl(id, pos, facing, up, resumeQuats, animPoseTransforms);
+
+	Matrix4 wristMatrix;
+	Transform wristTransform = animPoseTransforms[wristIndex];
+	TransformToMatrix4(wristTransform, wristMatrix);
+
+	Matrix4 magMatrix;
+	Transform magTransform = animPoseTransforms[magIndex];
+	TransformToMatrix4(magTransform, magMatrix);
+
+	Matrix4 wristInverse = wristMatrix;
+	wristInverse.invertAffine();
+
+	gripFromWristLocal = wristInverse * magMatrix;
+	bHasCapturedGrip = true;
+
+	if (Game::instance.c_LogPhysicalReloadDebug->Value())
+	{
+		const Vector3 t = gripFromWristLocal * Vector3(0.0f, 0.0f, 0.0f);
+		Logger::log << "[PhysicalReload:Grip] captured grip from resume pose"
+			<< " wristBone=" << wristIndex
+			<< " magBone=" << magIndex
+			<< " skipSeconds=" << skipSeconds
+			<< " replayIndex=" << replayIndex
+			<< " localTranslation=(" << t.x << "," << t.y << "," << t.z << ")"
+			<< std::endl;
+	}
+}
+
+bool WeaponHandler::GetGrabbedMagazineTargetMatrix(const Transform* outBoneTransforms, Matrix4& outTargetMatrix) const
+{
+	const int wristIndex = cachedViewModel.leftWristIndex;
+	if (!bHasCapturedGrip || wristIndex < 0 || !outBoneTransforms)
+	{
+		return false;
+	}
+
+	Matrix4 wristMatrix;
+	Transform wristTransform = outBoneTransforms[wristIndex];
+	TransformToMatrix4(wristTransform, wristMatrix);
+
+	outTargetMatrix = wristMatrix * gripFromWristLocal;
+	return true;
+}
+
 void WeaponHandler::RelocateMagazineBones(Transform* outBoneTransforms, const Vector3& targetRootPos, const Matrix4& targetRootOrientation)
 {
 	const int rootIndex = ResolveMagazineRootBoneIndex();
@@ -336,10 +425,16 @@ void WeaponHandler::RelocateMagazineBones(Transform* outBoneTransforms, const Ve
 	}
 }
 
-Matrix4 WeaponHandler::GetDetachedMagazineOrientation() const
+Matrix4 WeaponHandler::GetDetachedMagazineOrientation(const Transform* outBoneTransforms) const
 {
 	if (Game::instance.bMagazineGrabbed)
 	{
+		Matrix4 targetMatrix;
+		if (GetGrabbedMagazineTargetMatrix(outBoneTransforms, targetMatrix))
+		{
+			return targetMatrix;
+		}
+
 		const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
 		Matrix4 controllerTransform = Game::instance.GetVR()->GetControllerTransform(offHand, true);
 
@@ -411,9 +506,19 @@ void WeaponHandler::UpdatePhysicalMagazinePlacement(const HaloID& id, Transform*
 		return;
 	}
 
-	const Vector3 targetPos = Game::instance.bMagazineGrabbed
-		? GetOffHandWorldPosition() + GetMagazineGripWorldOffset()
-		: GetBeltMagazineWorldPosition();
+	Vector3 targetPos = GetBeltMagazineWorldPosition();
+	if (Game::instance.bMagazineGrabbed)
+	{
+		Matrix4 targetMatrix;
+		if (GetGrabbedMagazineTargetMatrix(outBoneTransforms, targetMatrix))
+		{
+			targetPos = targetMatrix * Vector3(0.0f, 0.0f, 0.0f);
+		}
+		else
+		{
+			targetPos = GetOffHandWorldPosition() + GetMagazineGripWorldOffset();
+		}
+	}
 
 	const int rootIndex = ResolveMagazineRootBoneIndex();
 	if (rootIndex < 0)
@@ -434,7 +539,7 @@ void WeaponHandler::UpdatePhysicalMagazinePlacement(const HaloID& id, Transform*
 		}
 	}
 
-	RelocateMagazineBones(outBoneTransforms, targetPos, GetDetachedMagazineOrientation());
+	RelocateMagazineBones(outBoneTransforms, targetPos, GetDetachedMagazineOrientation(outBoneTransforms));
 
 	if (bDebug)
 	{
@@ -451,7 +556,7 @@ void WeaponHandler::UpdatePhysicalMagazinePlacement(const HaloID& id, Transform*
 				<< std::endl;
 		}
 
-		Vector3 forward = GetDetachedMagazineOrientation().getForwardAxis();
+		Vector3 forward = GetDetachedMagazineOrientation(outBoneTransforms).getForwardAxis();
 		forward.z = 0.0f;
 		if (forward.lengthSqr() < 0.0001f)
 		{
@@ -491,6 +596,8 @@ void WeaponHandler::ResetPhysicalReloadBonePinState()
 	bReloadReplaying = false;
 	bReloadReplayComplete = false;
 	lastBonePinPhase = 0; // EPhysicalReloadPhase::Idle
+	bHasCapturedGrip = false;
+	gripFromWristLocal.identity();
 }
 
 static double GetPhysicalReloadClockSeconds()
@@ -512,7 +619,11 @@ void WeaponHandler::ClearReloadStartInsertSocket()
 {
 	bHasReloadStartMagSocket = false;
 	reloadStartMagLocalOffset = Vector3(0.0f, 0.0f, 0.0f);
+	bHasCapturedGrip = false;
+	gripFromWristLocal.identity();
 }
+
+
 
 void WeaponHandler::SetReloadReplaySkipSeconds(float skipSeconds)
 {
@@ -1086,6 +1197,7 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 	else if (reloadPhase == EPhysicalReloadPhase::PausedAtEject)
 	{
 		UpdateInsertSocketFromGun(outBoneTransforms);
+		CaptureGripFromResumePose(id, pos, facing, up);
 	}
 
 	UpdatePhysicalMagazinePlacement(id, outBoneTransforms);
@@ -1560,6 +1672,9 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 			break;
 		}
 	}
+
+	bHasCapturedGrip = false;
+	gripFromWristLocal.identity();
 }
 
 inline WeaponType WeaponHandler::GetWeaponType(Asset_Weapon* weapon) const
