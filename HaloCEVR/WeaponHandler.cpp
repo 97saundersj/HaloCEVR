@@ -73,7 +73,8 @@ bool WeaponHandler::IsMagazineBoneName(const char* name)
 	// bone tree (e.g. trigger, charging handle, display) via MarkMagazineSubtree.
 	return _stricmp(name, "frame magazine") == 0
 		|| _stricmp(name, "magazine") == 0
-		|| _stricmp(name, "clip") == 0;
+		|| _stricmp(name, "clip") == 0
+		|| _stricmp(name, "frame tubes") == 0;
 }
 
 void WeaponHandler::MarkMagazineBone(int boneIndex)

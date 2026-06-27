@@ -966,6 +966,8 @@ int Game::GetPhysicalReloadPauseTicks() const
 		return c_PhysicalReloadPauseTicks_Shotgun->Value();
 	case WeaponType::Sniper:
 		return c_PhysicalReloadPauseTicks_Sniper->Value();
+	case WeaponType::RocketLauncher:
+		return c_PhysicalReloadPauseTicks_RocketLauncher->Value();
 	default:
 		return c_PhysicalReloadPauseTicks_Default->Value();
 	}
@@ -983,6 +985,8 @@ int Game::GetPhysicalReloadResumeTicks() const
 		return c_PhysicalReloadResumeTicks_Shotgun->Value();
 	case WeaponType::Sniper:
 		return c_PhysicalReloadResumeTicks_Sniper->Value();
+	case WeaponType::RocketLauncher:
+		return c_PhysicalReloadResumeTicks_RocketLauncher->Value();
 	default:
 		return c_PhysicalReloadResumeTicks_Default->Value();
 	}
@@ -1274,18 +1278,20 @@ void Game::SetupConfigs()
 	c_PhysicalReloadPauseTicks_Default = config.RegisterInt("PhysicalReloadPauseTicks_Default", "Reload ticks after reload starts before the animation pauses for physical magazine grab/insert (30 ticks = 1 second). Used for weapons without a specific entry.", 10);
 	c_PhysicalReloadPauseTicks_Pistol = config.RegisterInt("PhysicalReloadPauseTicks_Pistol", "Pause tick for the M6D pistol", 25);
 	c_PhysicalReloadPauseTicks_AssaultRifle = config.RegisterInt("PhysicalReloadPauseTicks_AssaultRifle", "Pause tick for the MA5B assault rifle", 35);
-	c_PhysicalReloadPauseTicks_Shotgun = config.RegisterInt("PhysicalReloadPauseTicks_Shotgun", "Pause tick for the M90 shotgun", 15);
+	c_PhysicalReloadPauseTicks_Shotgun = config.RegisterInt("PhysicalReloadPauseTicks_Shotgun", "Pause tick for the M90 shotgun", 14);
 	c_PhysicalReloadPauseTicks_Sniper = config.RegisterInt("PhysicalReloadPauseTicks_Sniper", "Pause tick for the SRS99C sniper rifle", 30);
-	c_PhysicalReloadResumeTicks_Default = config.RegisterInt("PhysicalReloadResumeTicks_Default", "Reload tick from reload start where animation resumes on magazine insert (must be > pause tick). Skips the virtual insert segment so only chamber/finish plays. Used for weapons without a specific entry.", 35);
-	c_PhysicalReloadResumeTicks_Pistol = config.RegisterInt("PhysicalReloadResumeTicks_Pistol", "Resume tick for the M6D pistol", 40);
-	c_PhysicalReloadResumeTicks_AssaultRifle = config.RegisterInt("PhysicalReloadResumeTicks_AssaultRifle", "Resume tick for the MA5B assault rifle", 50);
+	c_PhysicalReloadPauseTicks_RocketLauncher = config.RegisterInt("PhysicalReloadPauseTicks_RocketLauncher", "Pause tick for the M19 rocket launcher", 20);
+	c_PhysicalReloadResumeTicks_Default = config.RegisterInt("PhysicalReloadResumeTicks_Default", "Reload tick from reload start where animation resumes on magazine insert (must be > pause tick). Skips the virtual insert segment so only chamber/finish plays. Used for weapons without a specific entry.", 30);
+	c_PhysicalReloadResumeTicks_Pistol = config.RegisterInt("PhysicalReloadResumeTicks_Pistol", "Resume tick for the M6D pistol", 35);
+	c_PhysicalReloadResumeTicks_AssaultRifle = config.RegisterInt("PhysicalReloadResumeTicks_AssaultRifle", "Resume tick for the MA5B assault rifle", 45);
 	c_PhysicalReloadResumeTicks_Shotgun = config.RegisterInt("PhysicalReloadResumeTicks_Shotgun", "Resume tick for the M90 shotgun", 45);
 	c_PhysicalReloadResumeTicks_Sniper = config.RegisterInt("PhysicalReloadResumeTicks_Sniper", "Resume tick for the SRS99C sniper rifle", 45);
+	c_PhysicalReloadResumeTicks_RocketLauncher = config.RegisterInt("PhysicalReloadResumeTicks_RocketLauncher", "Resume tick for the M19 rocket launcher", 40);
 	c_PhysicalReloadSoundStopDelay = config.RegisterFloat("PhysicalReloadSoundStopDelay", "Seconds to let the reload sound keep playing after the animation pauses at eject, so you hear the start of the reload before it goes quiet", 0.1f);
 	c_BeltMagazineHipDrop = config.RegisterFloat("BeltMagazineHipDrop", "How far below the camera (world units) the belt magazine sits. Feet marker uses 0.62; hip is typically 0.18-0.28", 0.2f);
 	c_BeltMagazineOffset = config.RegisterVector3("BeltMagazineOffset", "Fine-tune (forward, left) offset of the spare magazine on your belt in metres, relative to hip height below the camera", Vector3(0.05f, 0.28f, 0.0f));
 	c_BeltMagazineGrabDistance = config.RegisterFloat("BeltMagazineGrabDistance", "How close the off-hand must be to the belt magazine to grab it (metres)", 0.1f);
-	c_BeltMagazineInsertDistance = config.RegisterFloat("BeltMagazineInsertDistance", "How close the off-hand must be to the weapon magazine socket to insert and reload (metres)", 0.1f);
+	c_BeltMagazineInsertDistance = config.RegisterFloat("BeltMagazineInsertDistance", "How close the off-hand must be to the weapon magazine socket to insert and reload (metres)", 0.07f);
 	c_MagazineGripControllerOffset = config.RegisterVector3("MagazineGripControllerOffset", "Global fine-tune offset (forward, left, up in metres) applied in controller-local space after the animation-derived grip pose", Vector3(0.0f, 0.0f, 0.0f));
 	// Misc settings
 	c_ShowRoomCentre = config.RegisterBool("ShowRoomCentre", "Draw an indicator at your feet to show where the player character is actually positioned", true);

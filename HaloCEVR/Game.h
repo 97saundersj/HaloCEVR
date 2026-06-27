@@ -287,11 +287,13 @@ public:
 	IntProperty* c_PhysicalReloadPauseTicks_AssaultRifle = nullptr;
 	IntProperty* c_PhysicalReloadPauseTicks_Shotgun = nullptr;
 	IntProperty* c_PhysicalReloadPauseTicks_Sniper = nullptr;
+	IntProperty* c_PhysicalReloadPauseTicks_RocketLauncher = nullptr;
 	IntProperty* c_PhysicalReloadResumeTicks_Default = nullptr;
 	IntProperty* c_PhysicalReloadResumeTicks_Pistol = nullptr;
 	IntProperty* c_PhysicalReloadResumeTicks_AssaultRifle = nullptr;
 	IntProperty* c_PhysicalReloadResumeTicks_Shotgun = nullptr;
 	IntProperty* c_PhysicalReloadResumeTicks_Sniper = nullptr;
+	IntProperty* c_PhysicalReloadResumeTicks_RocketLauncher = nullptr;
 	FloatProperty* c_PhysicalReloadSoundStopDelay = nullptr;
 	FloatProperty* c_BeltMagazineHipDrop = nullptr;
 	Vector3Property* c_BeltMagazineOffset = nullptr;
