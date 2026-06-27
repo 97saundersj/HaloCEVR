@@ -74,7 +74,39 @@ bool WeaponHandler::IsMagazineBoneName(const char* name)
 	return _stricmp(name, "frame magazine") == 0
 		|| _stricmp(name, "magazine") == 0
 		|| _stricmp(name, "clip") == 0
-		|| _stricmp(name, "frame tubes") == 0;
+		|| _stricmp(name, "frame tubes") == 0
+		|| _stricmp(name, "frame bullet") == 0;
+}
+
+static int GetMagazineBoneRootPriority(const char* name)
+{
+	if (!name || !name[0])
+	{
+		return 0;
+	}
+
+	// Shotgun shells use "frame bullet"; the child "frame magazine" is the loading port flap.
+	if (_stricmp(name, "frame bullet") == 0)
+	{
+		return 4;
+	}
+
+	if (_stricmp(name, "frame magazine") == 0)
+	{
+		return 3;
+	}
+
+	if (_stricmp(name, "frame tubes") == 0)
+	{
+		return 2;
+	}
+
+	if (_stricmp(name, "magazine") == 0 || _stricmp(name, "clip") == 0)
+	{
+		return 1;
+	}
+
+	return 0;
 }
 
 void WeaponHandler::MarkMagazineBone(int boneIndex)
@@ -200,9 +232,14 @@ int WeaponHandler::GetReloadExitFullAnimIndex() const
 
 int WeaponHandler::GetActiveReloadAnimIndex() const
 {
-	return Game::instance.bPhysicalReloadFromEmpty
-		? cachedViewModel.reloadEmptyAnimIndex
-		: cachedViewModel.reloadFullAnimIndex;
+	if (Game::instance.bPhysicalReloadFromEmpty)
+	{
+		const int primary = cachedViewModel.reloadEmptyAnimIndex;
+		return primary >= 0 ? primary : cachedViewModel.reloadExitEmptyAnimIndex;
+	}
+
+	const int primary = cachedViewModel.reloadFullAnimIndex;
+	return primary >= 0 ? primary : cachedViewModel.reloadExitFullAnimIndex;
 }
 
 int WeaponHandler::GetActiveReloadExitAnimIndex() const
@@ -1489,26 +1526,44 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 #endif
 	}
 
+	bool bHasFrameBulletBone = false;
 	for (int i = 0; i < animationData->NumBones && i < 64; i++)
 	{
-		if (IsMagazineBoneName(boneArray[i].BoneName))
+		if (_stricmp(boneArray[i].BoneName, "frame bullet") == 0)
 		{
-			MarkMagazineBone(i);
-			cachedViewModel.bHasMagazineBones = true;
+			bHasFrameBulletBone = true;
+			break;
+		}
+	}
 
-			if (_stricmp(boneArray[i].BoneName, "frame magazine") == 0)
-			{
-				cachedViewModel.magazineRootBoneIndex = i;
-			}
-			else if (cachedViewModel.magazineRootBoneIndex < 0)
-			{
-				cachedViewModel.magazineRootBoneIndex = i;
-			}
+	for (int i = 0; i < animationData->NumBones && i < 64; i++)
+	{
+		if (!IsMagazineBoneName(boneArray[i].BoneName))
+		{
+			continue;
+		}
+
+		// Shotgun: "frame magazine" is the loading-port flap, not detachable ammo.
+		if (bHasFrameBulletBone && _stricmp(boneArray[i].BoneName, "frame magazine") == 0)
+		{
+			continue;
+		}
+
+		MarkMagazineBone(i);
+		cachedViewModel.bHasMagazineBones = true;
+
+		const int priority = GetMagazineBoneRootPriority(boneArray[i].BoneName);
+		const int currentPriority = cachedViewModel.magazineRootBoneIndex >= 0
+			? GetMagazineBoneRootPriority(boneArray[cachedViewModel.magazineRootBoneIndex].BoneName)
+			: 0;
+		if (priority > currentPriority)
+		{
+			cachedViewModel.magazineRootBoneIndex = i;
+		}
 
 #if DRAW_DEBUG_AIM
-			Logger::log << "[UpdateCache] Found magazine bone " << boneArray[i].BoneName << " @ " << i << std::endl;
+		Logger::log << "[UpdateCache] Found magazine bone " << boneArray[i].BoneName << " @ " << i << std::endl;
 #endif
-		}
 	}
 
 	if (cachedViewModel.bHasMagazineBones)
@@ -1516,29 +1571,34 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 		const char* rootName = cachedViewModel.magazineRootBoneIndex >= 0
 			? boneArray[cachedViewModel.magazineRootBoneIndex].BoneName
 			: "unknown";
+		const bool bShellOnlyRoot = cachedViewModel.magazineRootBoneIndex >= 0
+			&& _stricmp(rootName, "frame bullet") == 0;
 
-		if (cachedViewModel.magazineRootBoneIndex >= 0)
+		if (cachedViewModel.magazineRootBoneIndex >= 0 && !bShellOnlyRoot)
 		{
 			MarkMagazineDescendants(boneArray, animationData->NumBones, cachedViewModel.magazineRootBoneIndex);
 		}
 
 		// Also pick up any bones parented under an already-marked magazine bone.
-		bool bMarkChanged = true;
-		while (bMarkChanged)
+		if (!bShellOnlyRoot)
 		{
-			bMarkChanged = false;
-			for (int i = 0; i < animationData->NumBones && i < 64; i++)
+			bool bMarkChanged = true;
+			while (bMarkChanged)
 			{
-				if (cachedViewModel.magazineHideBones[i])
+				bMarkChanged = false;
+				for (int i = 0; i < animationData->NumBones && i < 64; i++)
 				{
-					continue;
-				}
+					if (cachedViewModel.magazineHideBones[i])
+					{
+						continue;
+					}
 
-				const int parentIndex = boneArray[i].Parent;
-				if (parentIndex >= 0 && parentIndex < 64 && cachedViewModel.magazineHideBones[parentIndex])
-				{
-					MarkMagazineBone(i);
-					bMarkChanged = true;
+					const int parentIndex = boneArray[i].Parent;
+					if (parentIndex >= 0 && parentIndex < 64 && cachedViewModel.magazineHideBones[parentIndex])
+					{
+						MarkMagazineBone(i);
+						bMarkChanged = true;
+					}
 				}
 			}
 		}

@@ -1278,13 +1278,13 @@ void Game::SetupConfigs()
 	c_PhysicalReloadPauseTicks_Default = config.RegisterInt("PhysicalReloadPauseTicks_Default", "Reload ticks after reload starts before the animation pauses for physical magazine grab/insert (30 ticks = 1 second). Used for weapons without a specific entry.", 10);
 	c_PhysicalReloadPauseTicks_Pistol = config.RegisterInt("PhysicalReloadPauseTicks_Pistol", "Pause tick for the M6D pistol", 25);
 	c_PhysicalReloadPauseTicks_AssaultRifle = config.RegisterInt("PhysicalReloadPauseTicks_AssaultRifle", "Pause tick for the MA5B assault rifle", 35);
-	c_PhysicalReloadPauseTicks_Shotgun = config.RegisterInt("PhysicalReloadPauseTicks_Shotgun", "Pause tick for the M90 shotgun", 14);
+	c_PhysicalReloadPauseTicks_Shotgun = config.RegisterInt("PhysicalReloadPauseTicks_Shotgun", "Pause tick for the M90 shotgun", 7);
 	c_PhysicalReloadPauseTicks_Sniper = config.RegisterInt("PhysicalReloadPauseTicks_Sniper", "Pause tick for the SRS99C sniper rifle", 30);
 	c_PhysicalReloadPauseTicks_RocketLauncher = config.RegisterInt("PhysicalReloadPauseTicks_RocketLauncher", "Pause tick for the M19 rocket launcher", 20);
 	c_PhysicalReloadResumeTicks_Default = config.RegisterInt("PhysicalReloadResumeTicks_Default", "Reload tick from reload start where animation resumes on magazine insert (must be > pause tick). Skips the virtual insert segment so only chamber/finish plays. Used for weapons without a specific entry.", 30);
 	c_PhysicalReloadResumeTicks_Pistol = config.RegisterInt("PhysicalReloadResumeTicks_Pistol", "Resume tick for the M6D pistol", 35);
 	c_PhysicalReloadResumeTicks_AssaultRifle = config.RegisterInt("PhysicalReloadResumeTicks_AssaultRifle", "Resume tick for the MA5B assault rifle", 45);
-	c_PhysicalReloadResumeTicks_Shotgun = config.RegisterInt("PhysicalReloadResumeTicks_Shotgun", "Resume tick for the M90 shotgun", 45);
+	c_PhysicalReloadResumeTicks_Shotgun = config.RegisterInt("PhysicalReloadResumeTicks_Shotgun", "Resume tick for the M90 shotgun", 12);
 	c_PhysicalReloadResumeTicks_Sniper = config.RegisterInt("PhysicalReloadResumeTicks_Sniper", "Resume tick for the SRS99C sniper rifle", 45);
 	c_PhysicalReloadResumeTicks_RocketLauncher = config.RegisterInt("PhysicalReloadResumeTicks_RocketLauncher", "Resume tick for the M19 rocket launcher", 40);
 	c_PhysicalReloadSoundStopDelay = config.RegisterFloat("PhysicalReloadSoundStopDelay", "Seconds to let the reload sound keep playing after the animation pauses at eject, so you hear the start of the reload before it goes quiet", 0.1f);
