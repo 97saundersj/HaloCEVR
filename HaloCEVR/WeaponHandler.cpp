@@ -78,32 +78,40 @@ bool WeaponHandler::IsMagazineBoneName(const char* name)
 		|| _stricmp(name, "frame bullet") == 0;
 }
 
-static int GetMagazineBoneRootPriority(const char* name)
+static int GetMagazineBoneRootPriority(const char* name, WeaponType weaponType)
 {
 	if (!name || !name[0])
 	{
 		return 0;
 	}
 
-	// Shotgun shells use "frame bullet"; the child "frame magazine" is the loading port flap.
-	if (_stricmp(name, "frame bullet") == 0)
+	switch (weaponType)
 	{
-		return 4;
-	}
+	case WeaponType::Shotgun:
+		if (_stricmp(name, "frame bullet") == 0)
+		{
+			return 1;
+		}
+		break;
 
-	if (_stricmp(name, "frame magazine") == 0)
-	{
-		return 3;
-	}
+	case WeaponType::RocketLauncher:
+		if (_stricmp(name, "frame tubes") == 0)
+		{
+			return 1;
+		}
+		break;
 
-	if (_stricmp(name, "frame tubes") == 0)
-	{
-		return 2;
-	}
+	default:
+		if (_stricmp(name, "magazine") == 0 || _stricmp(name, "clip") == 0)
+		{
+			return 1;
+		}
 
-	if (_stricmp(name, "magazine") == 0 || _stricmp(name, "clip") == 0)
-	{
-		return 1;
+		if (_stricmp(name, "frame magazine") == 0)
+		{
+			return 2;
+		}
+		break;
 	}
 
 	return 0;
@@ -1526,25 +1534,27 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 #endif
 	}
 
-	bool bHasFrameBulletBone = false;
-	for (int i = 0; i < animationData->NumBones && i < 64; i++)
+	WeaponType weaponType = WeaponType::Unknown;
 	{
-		if (_stricmp(boneArray[i].BoneName, "frame bullet") == 0)
+		BaseDynamicObject* player = Helpers::GetLocalPlayer();
+		if (player)
 		{
-			bHasFrameBulletBone = true;
-			break;
+			BaseDynamicObject* weaponObj = Helpers::GetDynamicObject(player->weapon);
+			if (weaponObj)
+			{
+				Asset_Weapon* weapon = Helpers::GetTypedAsset<Asset_Weapon>(weaponObj->tagID);
+				if (weapon)
+				{
+					weaponType = GetWeaponType(weapon);
+				}
+			}
 		}
 	}
 
 	for (int i = 0; i < animationData->NumBones && i < 64; i++)
 	{
-		if (!IsMagazineBoneName(boneArray[i].BoneName))
-		{
-			continue;
-		}
-
-		// Shotgun: "frame magazine" is the loading-port flap, not detachable ammo.
-		if (bHasFrameBulletBone && _stricmp(boneArray[i].BoneName, "frame magazine") == 0)
+		const int priority = GetMagazineBoneRootPriority(boneArray[i].BoneName, weaponType);
+		if (priority <= 0)
 		{
 			continue;
 		}
@@ -1552,9 +1562,8 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 		MarkMagazineBone(i);
 		cachedViewModel.bHasMagazineBones = true;
 
-		const int priority = GetMagazineBoneRootPriority(boneArray[i].BoneName);
 		const int currentPriority = cachedViewModel.magazineRootBoneIndex >= 0
-			? GetMagazineBoneRootPriority(boneArray[cachedViewModel.magazineRootBoneIndex].BoneName)
+			? GetMagazineBoneRootPriority(boneArray[cachedViewModel.magazineRootBoneIndex].BoneName, weaponType)
 			: 0;
 		if (priority > currentPriority)
 		{
