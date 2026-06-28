@@ -654,6 +654,8 @@ void __declspec(naked) Hooks::H_SetViewModelPosition()
 
 void Hooks::H_HandleInputs()
 {
+	Game::instance.PrepareShotgunFireDuringReload();
+
 	HandleInputs.Original();
 
 	Game::instance.UpdateInputs();

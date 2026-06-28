@@ -20,6 +20,10 @@ public:
 	bool ShouldBlockAutoReloadStart() const;
 	void UpdatePhysicalMagazineReload();
 	void ResetPhysicalReloadState();
+	void ResetPhysicalReloadCycle();
+	void EndShotgunShellSession();
+	void BeginChainedShellReload();
+	void PrepareShotgunFireDuringReload();
 	void ApplyPhysicalReloadAnimPin();
 
 	Vector3 smoothedPosition = Vector3(0.0f, 0.0f, 0.0f);
@@ -45,6 +49,7 @@ protected:
 	void HandlePhysicalMagazineGrabInsert();
 	void BeginPhysicalReload();
 	void ResumePhysicalReloadAnimation();
+	bool ShouldAllowShotgunFireDuringReload() const;
 	static WeaponDynamicObject* GetLocalWeaponObject();
 
 	char lastSnapState = 0;

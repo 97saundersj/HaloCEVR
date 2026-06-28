@@ -46,6 +46,8 @@ public:
 	bool ShouldShowBeltMagazine() const;
 	bool ShouldUsePhysicalMagazineReload() const;
 	bool SupportsPhysicalMagazineReload() const;
+	bool IsShellByShellReloadWeapon() const;
+	bool CanLoadAnotherShell() const;
 	Vector3 GetBeltMagazineWorldPosition() const;
 	Vector3 GetMagazineSocketWorldPosition() const;
 	int GetReloadEmptyAnimIndex() const;

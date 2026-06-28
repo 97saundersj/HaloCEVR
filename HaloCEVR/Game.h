@@ -73,6 +73,10 @@ public:
 	void TriggerWeaponReload();
 	void TriggerWeaponReloadEnd();
 	void ResetPhysicalReloadState();
+	void ResetPhysicalReloadCycle();
+	void EndShotgunShellSession();
+	void PrepareShotgunFireDuringReload();
+	bool ShouldContinueShotgunShellSession() const;
 	void ApplyPhysicalReloadAnimPin();
 	void ClearPhysicalReloadBoneSnapshot();
 	void ResetPhysicalReloadBonePinState();
@@ -137,6 +141,7 @@ public:
 	bool bMagazineGrabbed = false;  // True when player is holding the ejected mag
 	bool bManualPhysicalReloadPending = false;
 	bool bPhysicalReloadFromEmpty = false;
+	bool bShotgunShellSessionActive = false;
 	EPhysicalReloadPhase physicalReloadPhase = EPhysicalReloadPhase::Idle;
 	uint16_t pausedReloadAnimIndex = 0;
 	uint16_t pausedReloadAnimFrame = 0;
@@ -280,6 +285,8 @@ public:
 	FloatProperty* c_RightHandMeleeSwingSpeed = nullptr;
 	FloatProperty* c_CrouchHeight = nullptr;
 	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
+	BoolProperty* c_ShotgunShellSession = nullptr;
+	BoolProperty* c_ShotgunFireWhileReloading = nullptr;
 	BoolProperty* c_LogPhysicalReloadFrames = nullptr;
 	BoolProperty* c_LogPhysicalReloadDebug = nullptr;
 	IntProperty* c_PhysicalReloadPauseTicks_Default = nullptr;

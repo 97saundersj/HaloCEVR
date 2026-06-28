@@ -240,7 +240,8 @@ int WeaponHandler::GetReloadExitFullAnimIndex() const
 
 int WeaponHandler::GetActiveReloadAnimIndex() const
 {
-	if (Game::instance.bPhysicalReloadFromEmpty)
+	// Shotgun only has reload-empty / exit-empty clips (no reload-full); use those for every shell.
+	if (Game::instance.bPhysicalReloadFromEmpty || cachedViewModel.weaponType == WeaponType::Shotgun)
 	{
 		const int primary = cachedViewModel.reloadEmptyAnimIndex;
 		return primary >= 0 ? primary : cachedViewModel.reloadExitEmptyAnimIndex;
@@ -252,7 +253,7 @@ int WeaponHandler::GetActiveReloadAnimIndex() const
 
 int WeaponHandler::GetActiveReloadExitAnimIndex() const
 {
-	if (Game::instance.bPhysicalReloadFromEmpty)
+	if (Game::instance.bPhysicalReloadFromEmpty || cachedViewModel.weaponType == WeaponType::Shotgun)
 	{
 		return cachedViewModel.reloadExitEmptyAnimIndex;
 	}
@@ -269,6 +270,35 @@ bool WeaponHandler::ShouldUsePhysicalMagazineReload() const
 bool WeaponHandler::SupportsPhysicalMagazineReload() const
 {
 	return HasMagazineBones();
+}
+
+bool WeaponHandler::IsShellByShellReloadWeapon() const
+{
+	return cachedViewModel.weaponType == WeaponType::Shotgun;
+}
+
+bool WeaponHandler::CanLoadAnotherShell() const
+{
+	if (!IsShellByShellReloadWeapon())
+	{
+		return false;
+	}
+
+	BaseDynamicObject* player = Helpers::GetLocalPlayer();
+	if (!player || player->weapon.id == 0xffff)
+	{
+		return false;
+	}
+
+	WeaponDynamicObject* weaponObject = static_cast<WeaponDynamicObject*>(Helpers::GetDynamicObject(player->weapon));
+	if (!weaponObject)
+	{
+		return false;
+	}
+
+	const Weapon& weapon = weaponObject->weaponData[0];
+	static constexpr uint16_t kShotgunTubeCapacity = 12;
+	return weapon.reserveAmmo > 0 && weapon.ammo < kShotgunTubeCapacity;
 }
 
 int WeaponHandler::ResolveMagazineRootBoneIndex() const
@@ -1419,6 +1449,8 @@ void WeaponHandler::LogViewModelBoneHierarchy(AssetData_ModelAnimations* animati
 
 void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animationData)
 {
+	Game::instance.EndShotgunShellSession();
+
 	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0 || animationData->NumBones > 256)
 	{
 		Logger::log << "[UpdateCache] Invalid animation data for asset " << id << std::endl;

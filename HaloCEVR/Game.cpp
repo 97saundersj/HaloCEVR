@@ -888,7 +888,7 @@ void Game::TriggerWeaponReloadEnd()
 	Hooks::CallReloadEnd(0, player->weapon);
 }
 
-void Game::ResetPhysicalReloadState()
+void Game::ResetPhysicalReloadCycle()
 {
 	Helpers::ResumePhysicalReloadSounds(false);
 	physicalReloadPhase = EPhysicalReloadPhase::Idle;
@@ -901,7 +901,34 @@ void Game::ResetPhysicalReloadState()
 	frozenReloadRemaining = 0;
 	initialReloadRemaining = 0;
 	weaponHandler.ResetPhysicalReloadBonePinState();
-	weaponHandler.ClearReloadStartInsertSocket();
+	if (!bShotgunShellSessionActive)
+	{
+		weaponHandler.ClearReloadStartInsertSocket();
+	}
+}
+
+void Game::ResetPhysicalReloadState()
+{
+	bShotgunShellSessionActive = false;
+	ResetPhysicalReloadCycle();
+}
+
+bool Game::ShouldContinueShotgunShellSession() const
+{
+	return bShotgunShellSessionActive
+		&& c_ShotgunShellSession->Value()
+		&& weaponHandler.IsShellByShellReloadWeapon()
+		&& weaponHandler.CanLoadAnotherShell();
+}
+
+void Game::EndShotgunShellSession()
+{
+	inputHandler.EndShotgunShellSession();
+}
+
+void Game::PrepareShotgunFireDuringReload()
+{
+	inputHandler.PrepareShotgunFireDuringReload();
 }
 
 void Game::ResetPhysicalReloadBonePinState()
@@ -1075,7 +1102,35 @@ void Game::ReloadEnd(short param1, HaloID param2)
 		return;
 	}
 
+	const bool bPreserveChainedReload = ShouldContinueShotgunShellSession()
+		&& physicalReloadPhase != EPhysicalReloadPhase::Idle
+		&& physicalReloadPhase != EPhysicalReloadPhase::PlayingFinish;
+
+	if (physicalReloadPhase == EPhysicalReloadPhase::PlayingFinish
+		&& ShouldContinueShotgunShellSession())
+	{
+		bIsReloading = false;
+		// PlayingFinish chains on the next tick once it observes !bIsReloading.
+		return;
+	}
+
+	if (bPreserveChainedReload)
+	{
+		// A chained shell reload already advanced past the finished cycle.
+		return;
+	}
+
 	bIsReloading = false;
+
+	if (ShouldContinueShotgunShellSession()
+		&& physicalReloadPhase == EPhysicalReloadPhase::Idle)
+	{
+		// PlayingFinish handles chaining; only fall through here if reload ended while idle.
+		ResetPhysicalReloadCycle();
+		inputHandler.BeginChainedShellReload();
+		return;
+	}
+
 	ResetPhysicalReloadState();
 	//Logger::log << "Reload End" << std::endl;
 }
@@ -1273,6 +1328,8 @@ void Game::SetupConfigs()
 	c_RightShoulderHolsterOffset = config.RegisterVector3("RightShoulderHolsterOffset", "The (foward, left, up) Offset of the right shoulder holster relative to the headset's location", Vector3(-0.15f, -0.25f, -0.25f));
 	// Manual reload settings
 	c_DisableEmptyMagazineAutoReload = config.RegisterBool("DisableEmptyMagazineAutoReload", "When enabled, auto-reload on empty is disabled and you physically reload by pressing reload, grabbing the belt magazine, and inserting it. Works for empty and tactical (partial mag) reloads in 6DOF mode", false);
+	c_ShotgunShellSession = config.RegisterBool("ShotgunShellSession", "When physical reload is enabled, pressing reload once on the shotgun starts a shell-loading session. Additional shells only require grab and insert.", true);
+	c_ShotgunFireWhileReloading = config.RegisterBool("ShotgunFireWhileReloading", "When enabled during a shotgun shell-loading session, you can fire while waiting to grab/insert a shell (tube must have ammo).", true);
 	c_LogPhysicalReloadFrames = config.RegisterBool("LogPhysicalReloadFrames", "When enabled, logs reload phase and timer each tick during physical reload (use to calibrate pause tick settings)", true);
 	c_LogPhysicalReloadDebug = config.RegisterBool("LogPhysicalReloadDebug", "When enabled, logs belt magazine placement and reload sound muting (draws an orange marker at the belt mag position)", true);
 	c_PhysicalReloadPauseTicks_Default = config.RegisterInt("PhysicalReloadPauseTicks_Default", "Reload ticks after reload starts before the animation pauses for physical magazine grab/insert (30 ticks = 1 second). Used for weapons without a specific entry.", 10);

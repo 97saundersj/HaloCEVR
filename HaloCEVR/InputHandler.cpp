@@ -549,6 +549,16 @@ void InputHandler::ResetPhysicalReloadState()
 	Game::instance.ResetPhysicalReloadState();
 }
 
+void InputHandler::ResetPhysicalReloadCycle()
+{
+	Game::instance.ResetPhysicalReloadCycle();
+}
+
+void InputHandler::EndShotgunShellSession()
+{
+	Game::instance.ResetPhysicalReloadState();
+}
+
 WeaponDynamicObject* InputHandler::GetLocalWeaponObject()
 {
 	BaseDynamicObject* player = Helpers::GetLocalPlayer();
@@ -571,6 +581,42 @@ static bool ShouldPausePhysicalReload(
 	}
 
 	return (initialRemaining - currentRemaining) >= static_cast<uint16_t>(pauseTicks);
+}
+
+bool InputHandler::ShouldAllowShotgunFireDuringReload() const
+{
+	if (!Game::instance.c_ShotgunFireWhileReloading->Value()
+		|| !Game::instance.c_ShotgunShellSession->Value()
+		|| !Game::instance.bShotgunShellSessionActive
+		|| Game::instance.GetCachedWeaponType() != WeaponType::Shotgun
+		|| Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PausedAtEject)
+	{
+		return false;
+	}
+
+	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
+	if (!weaponObject || weaponObject->weaponData[0].ammo == 0)
+	{
+		return false;
+	}
+
+	return Game::instance.GetVR()->GetBoolInput(Fire);
+}
+
+void InputHandler::PrepareShotgunFireDuringReload()
+{
+	if (!ShouldAllowShotgunFireDuringReload())
+	{
+		return;
+	}
+
+	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
+	if (!weaponObject)
+	{
+		return;
+	}
+
+	weaponObject->weaponData[0].reloadState = 0;
 }
 
 void InputHandler::ApplyPhysicalReloadAnimPin()
@@ -598,7 +644,14 @@ void InputHandler::ApplyPhysicalReloadAnimPin()
 		Game::instance.frozenReloadRemaining = 9999;
 	}
 
-	weapon.reloadState = 1;
+	if (!ShouldAllowShotgunFireDuringReload())
+	{
+		weapon.reloadState = 1;
+	}
+	else
+	{
+		weapon.reloadState = 0;
+	}
 
 	const uint16_t pinnedAnim = Game::instance.pausedReloadAnimIndex != 0
 		? Game::instance.pausedReloadAnimIndex
@@ -685,7 +738,7 @@ void InputHandler::UpdateReloadAnimationPause()
 	{
 		if (!Game::instance.bIsReloading)
 		{
-			ResetPhysicalReloadState();
+			EndShotgunShellSession();
 			return;
 		}
 
@@ -725,11 +778,6 @@ void InputHandler::UpdateReloadAnimationPause()
 	{
 		ApplyPhysicalReloadAnimPin();
 		Helpers::PausePhysicalReloadSounds();
-
-		if (!Game::instance.bIsReloading)
-		{
-			ResetPhysicalReloadState();
-		}
 	}
 	else if (Game::instance.physicalReloadPhase == EPhysicalReloadPhase::PlayingFinish)
 	{
@@ -764,33 +812,59 @@ void InputHandler::UpdateReloadAnimationPause()
 		}
 		else if (!Game::instance.bIsReloading)
 		{
-			ResetPhysicalReloadState();
+			if (Game::instance.ShouldContinueShotgunShellSession())
+			{
+				ResetPhysicalReloadCycle();
+				BeginChainedShellReload();
+			}
+			else
+			{
+				EndShotgunShellSession();
+			}
 		}
 	}
 }
 
 void InputHandler::BeginPhysicalReload()
 {
+	if (Game::instance.c_ShotgunShellSession->Value()
+		&& Game::instance.GetCachedWeaponType() == WeaponType::Shotgun)
+	{
+		Game::instance.bShotgunShellSessionActive = true;
+	}
+
+	BeginChainedShellReload();
+}
+
+void InputHandler::BeginChainedShellReload()
+{
+	if (Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle)
+	{
+		return;
+	}
+
 	Game::instance.bPhysicalReloadFromEmpty = Game::instance.IsLocalMagazineEmpty();
 	Game::instance.bManualPhysicalReloadPending = true;
 	Game::instance.physicalReloadPhase = EPhysicalReloadPhase::PlayingEject;
 	Game::instance.initialReloadRemaining = 0;
-	// Capture the reload SFX buffer(s) so we can silence only those during the eject pause.
 	Helpers::BeginPhysicalReloadSoundCapture();
 	Game::instance.TriggerWeaponReload();
 	Game::instance.bManualPhysicalReloadPending = false;
 
 	if (!Game::instance.bIsReloading)
 	{
-		ResetPhysicalReloadState();
+		EndShotgunShellSession();
 		return;
 	}
 
 	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
-	if (weaponObject)
+	if (!weaponObject)
 	{
-		Game::instance.initialReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
+		EndShotgunShellSession();
+		return;
 	}
+
+	Game::instance.initialReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
 }
 
 void InputHandler::ResumePhysicalReloadAnimation()
@@ -904,13 +978,32 @@ void InputHandler::UpdatePhysicalMagazineReload()
 
 		if (reloadPressed && bReloadChanged)
 		{
-			BeginPhysicalReload();
+			if (Game::instance.bShotgunShellSessionActive)
+			{
+				EndShotgunShellSession();
+			}
+			else
+			{
+				BeginPhysicalReload();
+			}
 		}
 		break;
 	}
 	case EPhysicalReloadPhase::PausedAtEject:
+	{
+		IVR* vr = Game::instance.GetVR();
+		bool bReloadChanged = false;
+		const bool reloadPressed = vr->GetBoolInput(Reload, bReloadChanged);
+
+		if (reloadPressed && bReloadChanged && Game::instance.bShotgunShellSessionActive)
+		{
+			EndShotgunShellSession();
+			break;
+		}
+
 		HandlePhysicalMagazineGrabInsert();
 		break;
+	}
 	default:
 		break;
 	}
