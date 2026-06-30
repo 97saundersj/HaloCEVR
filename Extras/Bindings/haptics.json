@@ -3,6 +3,14 @@
   "PlasmaPistol": {
     "RampUpTicks": 45
   },
+  "PhysicalReloadInsert": {
+    "StartSecondsDelay": 0,
+    "DurationSeconds": 0.06,
+    "Frequency": 120,
+    "Amplitude": 0.9,
+    "UsePulse": true,
+    "PulseMicroseconds": 60000
+  },
   "Haptics": [
     {
       "Weapon": 0,

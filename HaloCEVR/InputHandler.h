@@ -24,6 +24,8 @@ public:
 	void EndShotgunShellSession();
 	void BeginChainedShellReload();
 	void PrepareShotgunFireDuringReload();
+	void SuspendShotgunActiveReloadForFire();
+	void TryBeginShotgunLoadFromBelt();
 	void ApplyPhysicalReloadAnimPin();
 
 	Vector3 smoothedPosition = Vector3(0.0f, 0.0f, 0.0f);
@@ -49,7 +51,7 @@ protected:
 	void HandlePhysicalMagazineGrabInsert();
 	void BeginPhysicalReload();
 	void ResumePhysicalReloadAnimation();
-	bool ShouldAllowShotgunFireDuringReload() const;
+	bool ShouldSuspendShotgunActiveReloadForFire() const;
 	static WeaponDynamicObject* GetLocalWeaponObject();
 
 	char lastSnapState = 0;

@@ -46,6 +46,16 @@ void WeaponHapticsConfigManager::LoadConfig()
 			Logger::log << "[WeaponHapticsConfig] There was an issue loading PlasmaPistolSettings " << std::endl;
 		}
 
+		try
+		{
+			json physicalReloadInsertJson = jf["PhysicalReloadInsert"];
+			physicalReloadInsert = GetWeaponHapticArgFromJson(physicalReloadInsertJson);
+		}
+		catch (...)
+		{
+			Logger::log << "[WeaponHapticsConfig] There was an issue loading PhysicalReloadInsert settings" << std::endl;
+		}
+
 		ReloadOnChange = jf["ReloadOnChange"];
 
 		json haptics = jf["Haptics"];

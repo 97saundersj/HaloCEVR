@@ -77,6 +77,7 @@ public:
 	void EndShotgunShellSession();
 	void PrepareShotgunFireDuringReload();
 	bool ShouldContinueShotgunShellSession() const;
+	bool ShouldAutoStartShotgunShellSession() const;
 	void ApplyPhysicalReloadAnimPin();
 	void ClearPhysicalReloadBoneSnapshot();
 	void ResetPhysicalReloadBonePinState();
@@ -142,6 +143,7 @@ public:
 	bool bManualPhysicalReloadPending = false;
 	bool bPhysicalReloadFromEmpty = false;
 	bool bShotgunShellSessionActive = false;
+	bool bShotgunShellSessionUserCancelled = false;
 	EPhysicalReloadPhase physicalReloadPhase = EPhysicalReloadPhase::Idle;
 	uint16_t pausedReloadAnimIndex = 0;
 	uint16_t pausedReloadAnimFrame = 0;
@@ -286,6 +288,7 @@ public:
 	FloatProperty* c_CrouchHeight = nullptr;
 	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
 	BoolProperty* c_ShotgunShellSession = nullptr;
+	BoolProperty* c_ShotgunAutoShellSession = nullptr;
 	BoolProperty* c_ShotgunFireWhileReloading = nullptr;
 	BoolProperty* c_LogPhysicalReloadFrames = nullptr;
 	BoolProperty* c_LogPhysicalReloadDebug = nullptr;

@@ -583,7 +583,7 @@ static bool ShouldPausePhysicalReload(
 	return (initialRemaining - currentRemaining) >= static_cast<uint16_t>(pauseTicks);
 }
 
-bool InputHandler::ShouldAllowShotgunFireDuringReload() const
+bool InputHandler::ShouldSuspendShotgunActiveReloadForFire() const
 {
 	if (!Game::instance.c_ShotgunFireWhileReloading->Value()
 		|| !Game::instance.c_ShotgunShellSession->Value()
@@ -603,20 +603,58 @@ bool InputHandler::ShouldAllowShotgunFireDuringReload() const
 	return Game::instance.GetVR()->GetBoolInput(Fire);
 }
 
-void InputHandler::PrepareShotgunFireDuringReload()
+void InputHandler::SuspendShotgunActiveReloadForFire()
 {
-	if (!ShouldAllowShotgunFireDuringReload())
-	{
-		return;
-	}
+	Game::instance.ResetPhysicalReloadCycle();
 
 	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
-	if (!weaponObject)
+	if (weaponObject)
+	{
+		weaponObject->weaponData[0].reloadState = 0;
+	}
+
+	Game::instance.bIsReloading = false;
+	Helpers::ResumePhysicalReloadSounds(false);
+}
+
+void InputHandler::PrepareShotgunFireDuringReload()
+{
+	if (!ShouldSuspendShotgunActiveReloadForFire())
 	{
 		return;
 	}
 
-	weaponObject->weaponData[0].reloadState = 0;
+	SuspendShotgunActiveReloadForFire();
+}
+
+void InputHandler::TryBeginShotgunLoadFromBelt()
+{
+	if (!Game::instance.c_ShotgunShellSession->Value()
+		|| !Game::instance.bShotgunShellSessionActive
+		|| Game::instance.GetCachedWeaponType() != WeaponType::Shotgun
+		|| Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle
+		|| !Game::instance.ShouldContinueShotgunShellSession())
+	{
+		return;
+	}
+
+	IVR* vr = Game::instance.GetVR();
+	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
+	Matrix4 offHandTransform = vr->GetControllerTransform(offHand, true);
+	Vector3 offHandPos = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
+	offHandPos *= Game::instance.MetresToWorld(1.0f);
+	offHandPos += Helpers::GetCamera().position;
+
+	const Vector3 beltPos = Game::instance.GetBeltMagazineWorldPosition();
+	const float grabDistance = Game::instance.c_BeltMagazineGrabDistance->Value();
+	const float grabDistanceSqr = grabDistance * grabDistance;
+	const bool offHandNearBelt = (offHandPos - beltPos).lengthSqr() < grabDistanceSqr;
+	const bool gripHeld = vr->GetBoolInput(TwoHandGrip);
+
+	if (gripHeld && offHandNearBelt)
+	{
+		BeginChainedShellReload();
+	}
 }
 
 void InputHandler::ApplyPhysicalReloadAnimPin()
@@ -644,14 +682,7 @@ void InputHandler::ApplyPhysicalReloadAnimPin()
 		Game::instance.frozenReloadRemaining = 9999;
 	}
 
-	if (!ShouldAllowShotgunFireDuringReload())
-	{
-		weapon.reloadState = 1;
-	}
-	else
-	{
-		weapon.reloadState = 0;
-	}
+	weapon.reloadState = 1;
 
 	const uint16_t pinnedAnim = Game::instance.pausedReloadAnimIndex != 0
 		? Game::instance.pausedReloadAnimIndex
@@ -819,6 +850,7 @@ void InputHandler::UpdateReloadAnimationPause()
 			}
 			else
 			{
+				Game::instance.bShotgunShellSessionUserCancelled = false;
 				EndShotgunShellSession();
 			}
 		}
@@ -875,6 +907,12 @@ void InputHandler::ResumePhysicalReloadAnimation()
 		ResetPhysicalReloadState();
 		return;
 	}
+
+	// Trigger haptics for the insert
+	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
+	WeaponHapticsConfigManager& hapticsConfig = Game::instance.weaponHapticsConfig;
+	hapticsConfig.LoadConfig();
+	hapticsConfig.HandleWeaponHaptics(Game::instance.GetVR(), offHand, hapticsConfig.physicalReloadInsert);
 
 	// Restore the remaining reload time from the resume tick (skipping the virtual insert segment).
 	// reloadState is left as-is so the reload simply continues from the chamber/finish portion.
@@ -980,13 +1018,27 @@ void InputHandler::UpdatePhysicalMagazineReload()
 		{
 			if (Game::instance.bShotgunShellSessionActive)
 			{
+				Game::instance.bShotgunShellSessionUserCancelled = true;
 				EndShotgunShellSession();
+			}
+			else if (Game::instance.GetCachedWeaponType() == WeaponType::Shotgun
+				&& Game::instance.c_ShotgunAutoShellSession->Value())
+			{
+				Game::instance.bShotgunShellSessionUserCancelled = true;
 			}
 			else
 			{
 				BeginPhysicalReload();
 			}
+			break;
 		}
+
+		if (Game::instance.ShouldAutoStartShotgunShellSession())
+		{
+			Game::instance.bShotgunShellSessionActive = true;
+		}
+
+		TryBeginShotgunLoadFromBelt();
 		break;
 	}
 	case EPhysicalReloadPhase::PausedAtEject:
@@ -997,6 +1049,7 @@ void InputHandler::UpdatePhysicalMagazineReload()
 
 		if (reloadPressed && bReloadChanged && Game::instance.bShotgunShellSessionActive)
 		{
+			Game::instance.bShotgunShellSessionUserCancelled = true;
 			EndShotgunShellSession();
 			break;
 		}

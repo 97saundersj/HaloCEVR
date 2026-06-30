@@ -213,9 +213,20 @@ bool WeaponHandler::HasMagazineBones() const
 
 bool WeaponHandler::ShouldShowBeltMagazine() const
 {
-	return HasMagazineBones()
-		&& !Game::instance.bUse3DOFAiming
-		&& Game::instance.bMagazineEjected;
+	if (!HasMagazineBones() || Game::instance.bUse3DOFAiming)
+	{
+		return false;
+	}
+
+	if (IsShellByShellReloadWeapon()
+		&& Game::instance.bShotgunShellSessionActive
+		&& Game::instance.ShouldContinueShotgunShellSession()
+		&& Game::instance.physicalReloadPhase == EPhysicalReloadPhase::Idle)
+	{
+		return true;
+	}
+
+	return Game::instance.bMagazineEjected;
 }
 
 int WeaponHandler::GetReloadEmptyAnimIndex() const
@@ -1449,6 +1460,7 @@ void WeaponHandler::LogViewModelBoneHierarchy(AssetData_ModelAnimations* animati
 
 void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animationData)
 {
+	Game::instance.bShotgunShellSessionUserCancelled = false;
 	Game::instance.EndShotgunShellSession();
 
 	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0 || animationData->NumBones > 256)

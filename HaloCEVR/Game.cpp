@@ -921,6 +921,17 @@ bool Game::ShouldContinueShotgunShellSession() const
 		&& weaponHandler.CanLoadAnotherShell();
 }
 
+bool Game::ShouldAutoStartShotgunShellSession() const
+{
+	return c_ShotgunShellSession->Value()
+		&& c_ShotgunAutoShellSession->Value()
+		&& !bShotgunShellSessionUserCancelled
+		&& weaponHandler.IsShellByShellReloadWeapon()
+		&& weaponHandler.CanLoadAnotherShell()
+		&& physicalReloadPhase == EPhysicalReloadPhase::Idle
+		&& !bIsReloading;
+}
+
 void Game::EndShotgunShellSession()
 {
 	inputHandler.EndShotgunShellSession();
@@ -1328,7 +1339,8 @@ void Game::SetupConfigs()
 	c_RightShoulderHolsterOffset = config.RegisterVector3("RightShoulderHolsterOffset", "The (foward, left, up) Offset of the right shoulder holster relative to the headset's location", Vector3(-0.15f, -0.25f, -0.25f));
 	// Manual reload settings
 	c_DisableEmptyMagazineAutoReload = config.RegisterBool("DisableEmptyMagazineAutoReload", "When enabled, auto-reload on empty is disabled and you physically reload by pressing reload, grabbing the belt magazine, and inserting it. Works for empty and tactical (partial mag) reloads in 6DOF mode", false);
-	c_ShotgunShellSession = config.RegisterBool("ShotgunShellSession", "When physical reload is enabled, pressing reload once on the shotgun starts a shell-loading session. Additional shells only require grab and insert.", true);
+	c_ShotgunShellSession = config.RegisterBool("ShotgunShellSession", "When physical reload is enabled, shotgun shell loading chains grab/insert cycles without pressing reload for each shell.", true);
+	c_ShotgunAutoShellSession = config.RegisterBool("ShotgunAutoShellSession", "When enabled, the shotgun keeps a shell on your belt whenever the tube can accept more shells. Grip the belt shell to load; combat animations and audio play normally until then. Press reload to cancel until you swap weapons.", true);
 	c_ShotgunFireWhileReloading = config.RegisterBool("ShotgunFireWhileReloading", "When enabled during a shotgun shell-loading session, you can fire while waiting to grab/insert a shell (tube must have ammo).", true);
 	c_LogPhysicalReloadFrames = config.RegisterBool("LogPhysicalReloadFrames", "When enabled, logs reload phase and timer each tick during physical reload (use to calibrate pause tick settings)", true);
 	c_LogPhysicalReloadDebug = config.RegisterBool("LogPhysicalReloadDebug", "When enabled, logs belt magazine placement and reload sound muting (draws an orange marker at the belt mag position)", true);
