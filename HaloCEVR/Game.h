@@ -195,12 +195,12 @@ protected:
 	EVehicleSeatRole vehicleSeatRole = EVehicleSeatRole::None;
 	bool bVehicleIsWarthog = false;
 	bool bVehicleViewAnchorValid = false;
-	Vector3 vehicleViewAnchorPosition = Vector3(0.0f, 0.0f, 0.0f);
-	Vector3 vehicleViewAnchorFacing = Vector3(1.0f, 0.0f, 0.0f);
-	Vector3 vehicleViewAnchorUp = Vector3(0.0f, 0.0f, 1.0f);
 	mutable bool bVehicleDriverHeadRelativeValid = false;
+	mutable bool bVehicleDriverViewCached = false;
 	mutable Matrix3 vehicleDriverHeadRelativeRot;
 	mutable Matrix3 vehicleDriverLastHeadRot;
+	mutable Vector3 vehicleDriverViewFacing = Vector3(1.0f, 0.0f, 0.0f);
+	mutable Vector3 vehicleDriverViewUp = Vector3(0.0f, 0.0f, 1.0f);
 
 	ERenderState mirrorSource;
 
@@ -281,6 +281,7 @@ protected:
 	void UpdateVehicleState(UnitDynamicObject* player);
 	void ResetVehicleViewState();
 	bool IsWarthogDriverViewEnabled() const;
-	Vector3 GetVehicleDriverHeadOffset(const Matrix4& headMatrix) const;
-	void BuildVehicleDriverViewOrientation(const Matrix4& headMatrix, Vector3& outFacing, Vector3& outUp) const;
+	void UpdateWarthogDriverHeadTracking();
+	Vector3 ComputeWarthogDriverAnchor(const BaseDynamicObject* vehicle, Vector3& outFacing, Vector3& outUp) const;
+	Vector3 GetVehicleDriverHeadOffset(const Matrix4& headMatrix, const Vector3& vehicleFacing, const Vector3& vehicleUp) const;
 };
