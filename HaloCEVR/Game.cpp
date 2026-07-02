@@ -6,8 +6,38 @@
 #include "Helpers/Renderer.h"
 #include "Helpers/Camera.h"
 #include "Helpers/Menus.h"
+#include "Helpers/Assets.h"
 #include "Helpers/Objects.h"
 #include "Helpers/Maths.h"
+
+namespace
+{
+	Matrix3 RotationFromFacingUp(const Vector3& facing, const Vector3& up)
+	{
+		Vector3 forward = facing;
+		forward.normalize();
+		Vector3 upVector = up;
+		upVector.normalize();
+		Vector3 right = forward.cross(upVector);
+		if (right.lengthSqr() < 1e-6f)
+		{
+			right = Vector3(0.0f, -1.0f, 0.0f);
+		}
+		else
+		{
+			right.normalize();
+		}
+
+		upVector = right.cross(forward);
+		upVector.normalize();
+
+		return Matrix3(
+			forward.x, forward.y, forward.z,
+			right.x, right.y, right.z,
+			upVector.x, upVector.y, upVector.z
+		);
+	}
+}
 
 #ifdef EMULATE_VR
 #include "VR/VREmulator.h"
@@ -15,13 +45,46 @@
 #include "VR/OpenVR.h"
 #endif
 
-#if USE_PROFILER
-#include <algorithm>
-#endif
-
 #include "UI/UIRenderer.h"
 #include "Helpers/Version.h"
 #include "Helpers/Cutscene.h"
+#include <algorithm>
+#include <cctype>
+#include <cstring>
+
+namespace
+{
+	constexpr float PI_F = 3.14159265358979323846f;
+	constexpr float RAD_TO_DEG = 180.0f / PI_F;
+	constexpr float DEG_TO_RAD = PI_F / 180.0f;
+
+	bool IsValidHaloID(const HaloID& id)
+	{
+		return id.id != 0xffff && id.index != 0xffff;
+	}
+
+	bool ContainsInsensitive(const char* text, const char* search)
+	{
+		if (!text || !search)
+		{
+			return false;
+		}
+
+		const std::size_t textLength = std::strlen(text);
+		const std::size_t searchLength = std::strlen(search);
+
+		if (searchLength == 0 || searchLength > textLength)
+		{
+			return false;
+		}
+
+		return std::search(text, text + textLength, search, search + searchLength,
+			[](char a, char b)
+			{
+				return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+			}) != text + textLength;
+	}
+}
 
 void Game::Init()
 {
@@ -157,6 +220,7 @@ void Game::PreDrawFrame(struct Renderer* renderer, float deltaTime)
 	if (bWasLoading && !bIsLoading)
 	{
 		bNeedsRecentre = true;
+		ResetVehicleViewState();
 	}
 	bWasLoading = bIsLoading;
 
@@ -164,6 +228,34 @@ void Game::PreDrawFrame(struct Renderer* renderer, float deltaTime)
 
 	vr->SetMouseVisibility(Helpers::IsMouseVisible());
 	vr->UpdatePoses();
+
+	UnitDynamicObject* Player = static_cast<UnitDynamicObject*>(Helpers::GetLocalPlayer());
+	if (Player)
+	{
+		bool bNewShowViewModel = Player->parent.id != 0xffff;
+
+		if (bNewShowViewModel != bShowViewModel)
+		{
+			// Self modifying code is the best code
+			Hooks::P_KeepViewModelVisible(bNewShowViewModel);
+
+			bShowViewModel = bNewShowViewModel;
+		}
+		bInVehicle = bNewShowViewModel;
+		bHasWeapon = Player->weapon.id != 0xffff;
+	}
+	else
+	{
+		bInVehicle = false;
+		bHasWeapon = true;
+	}
+
+	UpdateVehicleState(Player);
+
+	if (ShouldUseWarthogDriverView())
+	{
+		UpdateWarthogDriverHeadTracking();
+	}
 
 	UpdateCrosshairAndScope();
 
@@ -196,22 +288,6 @@ void Game::PreDrawFrame(struct Renderer* renderer, float deltaTime)
 	{
 		bNeedsRecentre = false;
 		vr->Recentre();
-	}
-
-	UnitDynamicObject* Player = static_cast<UnitDynamicObject*>(Helpers::GetLocalPlayer());
-	if (Player)
-	{
-		bool bNewShowViewModel = Player->parent.id != 0xffff;
-
-		if (bNewShowViewModel != bShowViewModel)
-		{
-			// Self modifying code is the best code
-			Hooks::P_KeepViewModelVisible(bNewShowViewModel);
-
-			bShowViewModel = bNewShowViewModel;
-		}
-		bInVehicle = bNewShowViewModel;
-		bHasWeapon = Player->weapon.id != 0xffff;
 	}
 
 	if (c_ShowRoomCentre->Value())
@@ -417,6 +493,20 @@ void Game::PreDrawMirror(struct Renderer* renderer, float deltaTime)
 
 	renderer->frustum = frustum1;
 	renderer->frustum2 = frustum2;
+
+	if (ShouldUseWarthogDriverView())
+	{
+		Vector3 viewOrigin, viewFacing, viewUp;
+		if (TryGetWarthogDriverViewOrigin(true, viewOrigin, &viewFacing, &viewUp))
+		{
+			renderer->frustum.position = viewOrigin;
+			renderer->frustum2.position = viewOrigin;
+			renderer->frustum.facingDirection = viewFacing;
+			renderer->frustum2.facingDirection = viewFacing;
+			renderer->frustum.upDirection = viewUp;
+			renderer->frustum2.upDirection = viewUp;
+		}
+	}
 
 	RestoreRenderTargets();
 
@@ -906,6 +996,311 @@ Vector3 Game::GetSmoothedInput() const
 	return inputHandler.smoothedPosition;
 }
 
+bool Game::IsWarthogDriverViewEnabled() const
+{
+	return c_VehicleViewMode && c_VehicleViewMode->Value() == static_cast<int>(EVehicleViewMode::WarthogDriver);
+}
+
+bool Game::ShouldUseWarthogDriverView() const
+{
+	return IsWarthogDriverViewEnabled()
+		&& bInVehicle
+		&& !bHasWeapon
+		&& vehicleSeatRole == EVehicleSeatRole::Driver
+		&& bVehicleIsWarthog
+		&& bVehicleViewAnchorValid;
+}
+
+void Game::ResetVehicleViewState()
+{
+	bVehicleViewAnchorValid = false;
+	bVehicleDriverHeadRelativeValid = false;
+	bVehicleDriverViewCached = false;
+	vehicleDriverHeadRelativeRot.identity();
+	vehicleDriverLastHeadRot.identity();
+	vehicleDriverViewFacing = Vector3(1.0f, 0.0f, 0.0f);
+	vehicleDriverViewUp = Vector3(0.0f, 0.0f, 1.0f);
+}
+
+void Game::UpdateVehicleState(UnitDynamicObject* player)
+{
+	const HaloID previousVehicleID = activeVehicleID;
+	const EVehicleSeatRole previousSeatRole = vehicleSeatRole;
+	const bool bPreviousDriverView = ShouldUseWarthogDriverView();
+
+	activeVehicleID = { 0xffff, 0xffff };
+	vehicleSeatRole = EVehicleSeatRole::None;
+	bVehicleIsWarthog = false;
+
+	BaseDynamicObject* vehicle = nullptr;
+	if (player && IsValidHaloID(player->parent))
+	{
+		activeVehicleID = player->parent;
+		vehicle = Helpers::GetDynamicObject(activeVehicleID);
+
+		if (vehicle && vehicle->N0000027E == ObjectType::VEHICLE)
+		{
+			switch (player->parentSeatIndex)
+			{
+			case 0:
+				vehicleSeatRole = EVehicleSeatRole::Driver;
+				break;
+			case 1:
+				vehicleSeatRole = EVehicleSeatRole::Gunner;
+				break;
+			default:
+				vehicleSeatRole = EVehicleSeatRole::Passenger;
+				break;
+			}
+
+			bVehicleIsWarthog = ContainsInsensitive(Helpers::GetAssetPath(vehicle->tagID), "warthog");
+		}
+		else
+		{
+			activeVehicleID = { 0xffff, 0xffff };
+			vehicle = nullptr;
+		}
+	}
+
+	const bool bVehicleChanged = previousVehicleID.id != activeVehicleID.id
+		|| previousVehicleID.index != activeVehicleID.index
+		|| previousSeatRole != vehicleSeatRole;
+
+	const bool bShouldUseDriverView = IsWarthogDriverViewEnabled()
+		&& bInVehicle
+		&& !bHasWeapon
+		&& vehicleSeatRole == EVehicleSeatRole::Driver
+		&& bVehicleIsWarthog
+		&& vehicle;
+
+	if (!bShouldUseDriverView)
+	{
+		if (bVehicleChanged || bPreviousDriverView)
+		{
+			ResetVehicleViewState();
+			bIgnoreNextRoomScaleMovement = true;
+		}
+		return;
+	}
+
+	if (bVehicleChanged || !bPreviousDriverView)
+	{
+		bVehicleDriverHeadRelativeValid = false;
+		bVehicleDriverViewCached = false;
+	}
+
+	bVehicleViewAnchorValid = true;
+}
+
+Vector3 Game::ComputeWarthogDriverAnchor(const BaseDynamicObject* vehicle, Vector3& outFacing, Vector3& outUp) const
+{
+	Vector3 facing = vehicle->facingDir;
+	if (facing.lengthSqr() < 1e-6f)
+	{
+		facing = Vector3(1.0f, 0.0f, 0.0f);
+	}
+	else
+	{
+		facing.normalize();
+	}
+
+	Vector3 up = vehicle->upDirection;
+	if (up.lengthSqr() < 1e-6f)
+	{
+		up = Vector3(0.0f, 0.0f, 1.0f);
+	}
+	else
+	{
+		up.normalize();
+	}
+
+	Vector3 left = up.cross(facing);
+	if (left.lengthSqr() < 1e-6f)
+	{
+		left = Vector3(0.0f, 1.0f, 0.0f);
+	}
+	else
+	{
+		left.normalize();
+	}
+
+	up = facing.cross(left);
+	up.normalize();
+
+	const Vector3 cameraOffset = c_WarthogDriverCameraOffset->Value();
+	const Vector3 anchor = vehicle->position
+		+ facing * MetresToWorld(cameraOffset.x)
+		+ left * MetresToWorld(cameraOffset.y)
+		+ up * MetresToWorld(cameraOffset.z);
+
+	outFacing = facing;
+	outUp = up;
+	return anchor;
+}
+
+void Game::UpdateWarthogDriverHeadTracking()
+{
+	bVehicleDriverViewCached = false;
+
+	if (!vr || !ShouldUseWarthogDriverView())
+	{
+		return;
+	}
+
+	BaseDynamicObject* vehicle = Helpers::GetDynamicObject(activeVehicleID);
+	if (!vehicle)
+	{
+		return;
+	}
+
+	Vector3 vehicleFacing;
+	Vector3 vehicleUp;
+	ComputeWarthogDriverAnchor(vehicle, vehicleFacing, vehicleUp);
+
+	const Matrix4 headMatrix = vr->GetHMDTransform(true);
+	const Matrix3 headRotation(
+		headMatrix[0], headMatrix[1], headMatrix[2],
+		headMatrix[4], headMatrix[5], headMatrix[6],
+		headMatrix[8], headMatrix[9], headMatrix[10]
+	);
+
+	const Matrix3 vehicleRotation = RotationFromFacingUp(vehicleFacing, vehicleUp);
+
+	if (!bVehicleDriverHeadRelativeValid)
+	{
+		Matrix3 inverseVehicleRotation = vehicleRotation;
+		inverseVehicleRotation.transpose();
+		vehicleDriverHeadRelativeRot = inverseVehicleRotation * headRotation;
+		vehicleDriverLastHeadRot = headRotation;
+		bVehicleDriverHeadRelativeValid = true;
+	}
+	else
+	{
+		Matrix3 inverseLastHeadRotation = vehicleDriverLastHeadRot;
+		inverseLastHeadRotation.transpose();
+		const Matrix3 headDelta = inverseLastHeadRotation * headRotation;
+		vehicleDriverHeadRelativeRot *= headDelta;
+		vehicleDriverLastHeadRot = headRotation;
+	}
+
+	const Matrix3 viewRotation = vehicleRotation * vehicleDriverHeadRelativeRot;
+	vehicleDriverViewFacing = (viewRotation * Vector3(1.0f, 0.0f, 0.0f)).normalize();
+	vehicleDriverViewUp = (viewRotation * Vector3(0.0f, 0.0f, 1.0f)).normalize();
+	bVehicleDriverViewCached = true;
+}
+
+Vector3 Game::GetVehicleDriverHeadOffset(const Matrix4& headMatrix, const Vector3& vehicleFacing, const Vector3& vehicleUp) const
+{
+	Vector3 facing = vehicleFacing;
+	facing.normalize();
+	Vector3 up = vehicleUp;
+	up.normalize();
+	Vector3 right = facing.cross(up);
+
+	if (right.lengthSqr() < 1e-6f)
+	{
+		right = Vector3(0.0f, -1.0f, 0.0f);
+	}
+	else
+	{
+		right.normalize();
+	}
+
+	const Vector3 headMotionScale = c_VehicleViewHeadMotionScale->Value();
+	const Vector3 localHeadPosition = headMatrix * Vector3(0.0f, 0.0f, 0.0f);
+
+	return (right * (localHeadPosition.dot(right) * headMotionScale.x)
+		+ facing * (localHeadPosition.dot(facing) * headMotionScale.y)
+		+ up * (localHeadPosition.dot(up) * headMotionScale.z)) * MetresToWorld(1.0f);
+}
+
+bool Game::TryGetWarthogDriverViewOrigin(bool bRenderPose, Vector3& outOrigin, Vector3* outFacing, Vector3* outUp) const
+{
+	if (!ShouldUseWarthogDriverView() || !vr || !bVehicleDriverViewCached)
+	{
+		return false;
+	}
+
+	HaloID vehicleID = activeVehicleID;
+	BaseDynamicObject* vehicle = Helpers::GetDynamicObject(vehicleID);
+	if (!vehicle)
+	{
+		return false;
+	}
+
+	Vector3 vehicleFacing;
+	Vector3 vehicleUp;
+	const Vector3 anchorPosition = ComputeWarthogDriverAnchor(vehicle, vehicleFacing, vehicleUp);
+
+	const Matrix4 headMatrix = vr->GetHMDTransform(bRenderPose);
+	const Vector3 headMotionScale = c_VehicleViewHeadMotionScale->Value();
+	if (headMotionScale.x != 1.0f || headMotionScale.y != 1.0f || headMotionScale.z != 1.0f)
+	{
+		outOrigin = anchorPosition + GetVehicleDriverHeadOffset(headMatrix, vehicleFacing, vehicleUp);
+	}
+	else
+	{
+		outOrigin = anchorPosition + (headMatrix * Vector3(0.0f, 0.0f, 0.0f)) * MetresToWorld(1.0f);
+	}
+
+	if (outFacing || outUp)
+	{
+		if (outFacing)
+		{
+			*outFacing = vehicleDriverViewFacing;
+		}
+		if (outUp)
+		{
+			*outUp = vehicleDriverViewUp;
+		}
+	}
+
+	return true;
+}
+
+bool Game::TryApplyVehicleDriverView(CameraFrustum& frustum, const Matrix4& headMatrix, const Matrix4& eyeMatrix) const
+{
+	if (!ShouldUseWarthogDriverView() || !bVehicleDriverViewCached)
+	{
+		return false;
+	}
+
+	HaloID vehicleID = activeVehicleID;
+	BaseDynamicObject* vehicle = Helpers::GetDynamicObject(vehicleID);
+	if (!vehicle)
+	{
+		return false;
+	}
+
+	Vector3 vehicleFacing;
+	Vector3 vehicleUp;
+	const Vector3 anchorPosition = ComputeWarthogDriverAnchor(vehicle, vehicleFacing, vehicleUp);
+
+	const Vector3 headMotionScale = c_VehicleViewHeadMotionScale->Value();
+	Vector3 trackedOffset;
+	if (headMotionScale.x != 1.0f || headMotionScale.y != 1.0f || headMotionScale.z != 1.0f)
+	{
+		Matrix4 eyeOffsetMatrix = eyeMatrix;
+		eyeOffsetMatrix.invert();
+
+		const Vector3 rawHeadPosition = headMatrix * Vector3(0.0f, 0.0f, 0.0f);
+		const Vector3 rawEyePosition = (headMatrix * eyeOffsetMatrix) * Vector3(0.0f, 0.0f, 0.0f);
+		const Vector3 eyeOffset = (rawEyePosition - rawHeadPosition) * MetresToWorld(1.0f);
+		trackedOffset = GetVehicleDriverHeadOffset(headMatrix, vehicleFacing, vehicleUp) + eyeOffset;
+	}
+	else
+	{
+		Matrix4 localEyeMatrix = eyeMatrix;
+		Matrix4 viewMatrix = (headMatrix * localEyeMatrix.invert()).scale(MetresToWorld(1.0f));
+		trackedOffset = viewMatrix * Vector3(0.0f, 0.0f, 0.0f);
+	}
+
+	frustum.position = anchorPosition + trackedOffset;
+	frustum.facingDirection = vehicleDriverViewFacing;
+	frustum.upDirection = vehicleDriverViewUp;
+	return true;
+}
+
 void Game::UpdateCamera(float& yaw, float& pitch)
 {
 	VR_PROFILE_SCOPE(Game_UpdateCamera);
@@ -914,7 +1309,17 @@ void Game::UpdateCamera(float& yaw, float& pitch)
 	return;
 #endif
 
-	if (bInVehicle && !bHasWeapon)
+	const bool bUseWarthogDriverHeadTracking = IsWarthogDriverViewEnabled()
+		&& bInVehicle
+		&& !bHasWeapon
+		&& vehicleSeatRole == EVehicleSeatRole::Driver
+		&& bVehicleIsWarthog;
+
+	if (bUseWarthogDriverHeadTracking)
+	{
+		inputHandler.UpdateCameraForWarthogDriver(yaw, pitch);
+	}
+	else if (bInVehicle && !bHasWeapon)
 	{
 		inputHandler.UpdateCameraForVehicles(yaw, pitch);
 	}
@@ -1060,6 +1465,12 @@ void Game::SetupConfigs()
 	c_HandRelativeOffsetRotation = config.RegisterFloat("HandRelativeOffsetRotation", "Hand direction rotational offset in degrees used for hand-relative movement", -20.0f);
 	c_HorizontalVehicleTurnAmount = config.RegisterFloat("HorizontalVehicleTurnAmount", "Rotation in degrees per second the view will turn horizontally when in vehicles (<0 to invert)", 90.0f);
 	c_VerticalVehicleTurnAmount = config.RegisterFloat("VerticalVehicleTurnAmount", "Rotation in degrees per second the view will turn vertically when in vehicles (<0 to invert)", 45.0f);
+	c_VehicleViewMode = config.RegisterInt("VehicleViewMode", "Experimental vehicle view mode (0 = disabled, 1 = first-person warthog driver prototype)", 0);
+	c_WarthogDriverCameraOffset = config.RegisterVector3("WarthogDriverCameraOffset", "Experimental first-person warthog driver camera anchor offset in metres, relative to the vehicle (forward, left, up)", Vector3(-0.5f, 0.5f, 1.0f));
+	c_VehicleViewHeadMotionScale = config.RegisterVector3("VehicleViewHeadMotionScale", "Experimental multiplier for head movement while using the first-person warthog driver view (sideways, forward, vertical)", Vector3(1.0f, 1.0f, 1.0f));
+	c_VehicleViewSmoothing = config.RegisterFloat("VehicleViewSmoothing", "Experimental smoothing applied to the first-person warthog driver camera anchor (0 disables smoothing, recommended for VR)", 0.0f);
+	c_VehicleViewPitchMin = config.RegisterFloat("VehicleViewPitchMin", "Experimental minimum pitch angle in degrees for the first-person warthog driver view", -40.0f);
+	c_VehicleViewPitchMax = config.RegisterFloat("VehicleViewPitchMax", "Experimental maximum pitch angle in degrees for the first-person warthog driver view", 35.0f);
 	c_ToggleGrip = config.RegisterBool("ToggleGrip", "When true releasing two handed weapons requires pressing the grip action again", false);
 	c_TwoHandDistance = config.RegisterFloat("TwoHandDistance", "Maximum distance between both hands where the off hand grip action will enable two handed aiming (<0 for any distance)", 0.8f);
 	c_SwapHandDistance = config.RegisterFloat("SwapHandDistance", "Maximum distance between both hands where the swap weapon hand grip action will swap your weapon into the opposite hand (<0 to disable)", 0.2f);
@@ -1256,10 +1667,18 @@ void Game::UpdateCrosshairAndScope()
 		};
 
 	Vector3 aimPos, aimDir, upDir;
+	const bool bUseWarthogDriverView = ShouldUseWarthogDriverView();
 
-	if (bInVehicle && !bHasWeapon)
+	if (bUseWarthogDriverView)
 	{
-		aimPos = Vector3();
+		if (!TryGetWarthogDriverViewOrigin(true, aimPos, &aimDir, &upDir))
+		{
+			return;
+		}
+	}
+	else if (bInVehicle && !bHasWeapon)
+	{
+		aimPos = Helpers::GetCamera().position;
 		aimDir = Helpers::GetCamera().lookDir;
 	}
 	else
@@ -1278,7 +1697,7 @@ void Game::UpdateCrosshairAndScope()
 
 	// In 3DOF mode, crosshair projects from HMD position (matching bullet origin)
 	// In 6DOF mode, crosshair projects from controller/weapon position
-	Vector3 crosshairOrigin = bUse3DOFAiming ? hmdPos : aimPos;
+	Vector3 crosshairOrigin = (bUse3DOFAiming || bUseWarthogDriverView) ? hmdPos : aimPos;
 	Vector3 targetPos = crosshairOrigin + aimDir * c_CrosshairDistance->Value();
 
 	overlayTransform.translate(targetPos);

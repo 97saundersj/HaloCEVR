@@ -381,6 +381,22 @@ void InputHandler::UpdateCameraForVehicles(float& yaw, float& pitch)
 	pitch = DegToRad * PitchDelta;
 }
 
+void InputHandler::UpdateCameraForWarthogDriver(float& yaw, float& pitch)
+{
+	IVR* vr = Game::instance.GetVR();
+
+	Vector2 lookInput = vr->GetVector2Input(Look);
+
+	const float DegToRad = 3.141593f / 180.0f;
+
+	const float YawDelta = lookInput.x * Game::instance.c_HorizontalVehicleTurnAmount->Value() * Game::instance.lastDeltaTime;
+	const float PitchDelta = lookInput.y * Game::instance.c_VerticalVehicleTurnAmount->Value() * Game::instance.lastDeltaTime;
+
+	// Feed stick input to the game for vehicle steering without rotating the VR view.
+	yaw = -DegToRad * YawDelta;
+	pitch = DegToRad * PitchDelta;
+}
+
 unsigned char InputHandler::UpdateFlashlight()
 {
 	IVR* vr = Game::instance.GetVR();

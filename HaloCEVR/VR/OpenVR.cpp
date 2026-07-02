@@ -511,6 +511,12 @@ void OpenVR::UpdateCameraFrustum(CameraFrustum* frustum, int eye)
 
 	Matrix4 headMatrix = GetHMDTransform(true);
 
+	if (Game::instance.TryApplyVehicleDriverView(*frustum, headMatrix, eyeMatrix))
+	{
+		frustum->fov = fov;
+		return;
+	}
+
 	// Yaw should follow cutscene camera
 	CutsceneData* cutscene = Helpers::GetCutsceneData();
 
