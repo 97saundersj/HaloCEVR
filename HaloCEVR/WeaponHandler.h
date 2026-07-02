@@ -86,7 +86,6 @@ protected:
 
 	inline void TransformToMatrix4(struct Transform& inTransform, class Matrix4& outMatrix) const;
 
-	static bool IsMagazineBoneName(const char* name);
 	bool IsFirstPersonWeaponAnimationsAsset(struct AssetData_ModelAnimations* animationData) const;
 	void MarkMagazineBone(int boneIndex);
 	void MarkMagazineDescendants(struct Bone* boneArray, int numBones, int rootIndex);

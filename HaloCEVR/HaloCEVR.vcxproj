@@ -274,6 +274,7 @@
     <ClCompile Include="VR\VREmulator.cpp" />
     <ClCompile Include="WeaponHandler.cpp" />
     <ClCompile Include="WeaponHapticsConfig.cpp" />
+    <ClCompile Include="WeaponManualReloadConfig.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Config\Config.h" />
@@ -321,6 +322,7 @@
     <ClInclude Include="VR\IVR.h" />
     <ClInclude Include="WeaponHandler.h" />
     <ClInclude Include="WeaponHapticsConfig.h" />
+    <ClInclude Include="WeaponManualReloadConfig.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="cpp.hint" />

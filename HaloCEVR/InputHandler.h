@@ -51,6 +51,8 @@ protected:
 	void HandlePhysicalMagazineGrabInsert();
 	void BeginPhysicalReload();
 	void ResumePhysicalReloadAnimation();
+	bool IsOffHandNearBeltMagazine() const;
+	bool ShouldSuppressTwoHandAimForPhysicalReload() const;
 	bool ShouldSuspendShotgunActiveReloadForFire() const;
 	static WeaponDynamicObject* GetLocalWeaponObject();
 
@@ -65,6 +67,9 @@ protected:
 	// Set while the off-hand grip is held to grab/insert a magazine during physical reload.
 	// Blocks weapon-hand swapping until that grip is released, so the insert hold isn't read as a swap.
 	bool bSuppressSwapUntilGripRelease = false;
+	// Set when a belt grip press starts a chained shell reload; cleared on pause so the same
+	// held grip can pick up the shell without a second press.
+	bool bBeltGripStartedReload = false;
 	
 	InputBindingID Jump = 0;
 	InputBindingID SwitchGrenades = 0;

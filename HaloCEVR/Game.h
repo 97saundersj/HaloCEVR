@@ -13,6 +13,7 @@
 #include "InputHandler.h"
 #include "InGameRenderer.h"
 #include "WeaponHapticsConfig.h"
+#include "WeaponManualReloadConfig.h"
 #include "Profiler.h"
 #include "UI/UIRenderer.h"
 #include "UI/SettingsMenu.h"
@@ -76,8 +77,8 @@ public:
 	void ResetPhysicalReloadCycle();
 	void EndShotgunShellSession();
 	void PrepareShotgunFireDuringReload();
-	bool ShouldContinueShotgunShellSession() const;
-	bool ShouldAutoStartShotgunShellSession() const;
+	bool ShouldContinueContinuousReloadSession() const;
+	bool ShouldAutoStartContinuousReloadSession() const;
 	void ApplyPhysicalReloadAnimPin();
 	void ClearPhysicalReloadBoneSnapshot();
 	void ResetPhysicalReloadBonePinState();
@@ -158,6 +159,7 @@ public:
 	bool bDetectedChimera = false;
 	Vector3 LastLookDir;
 	WeaponHapticsConfigManager weaponHapticsConfig;
+	WeaponManualReloadConfigManager weaponManualReloadConfig;
 
 	bool bLoadedConfig = false;
 	bool bSavedConfig = false;
@@ -287,23 +289,8 @@ public:
 	FloatProperty* c_RightHandMeleeSwingSpeed = nullptr;
 	FloatProperty* c_CrouchHeight = nullptr;
 	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
-	BoolProperty* c_ShotgunShellSession = nullptr;
-	BoolProperty* c_ShotgunAutoShellSession = nullptr;
-	BoolProperty* c_ShotgunFireWhileReloading = nullptr;
 	BoolProperty* c_LogPhysicalReloadFrames = nullptr;
 	BoolProperty* c_LogPhysicalReloadDebug = nullptr;
-	IntProperty* c_PhysicalReloadPauseTicks_Default = nullptr;
-	IntProperty* c_PhysicalReloadPauseTicks_Pistol = nullptr;
-	IntProperty* c_PhysicalReloadPauseTicks_AssaultRifle = nullptr;
-	IntProperty* c_PhysicalReloadPauseTicks_Shotgun = nullptr;
-	IntProperty* c_PhysicalReloadPauseTicks_Sniper = nullptr;
-	IntProperty* c_PhysicalReloadPauseTicks_RocketLauncher = nullptr;
-	IntProperty* c_PhysicalReloadResumeTicks_Default = nullptr;
-	IntProperty* c_PhysicalReloadResumeTicks_Pistol = nullptr;
-	IntProperty* c_PhysicalReloadResumeTicks_AssaultRifle = nullptr;
-	IntProperty* c_PhysicalReloadResumeTicks_Shotgun = nullptr;
-	IntProperty* c_PhysicalReloadResumeTicks_Sniper = nullptr;
-	IntProperty* c_PhysicalReloadResumeTicks_RocketLauncher = nullptr;
 	FloatProperty* c_PhysicalReloadSoundStopDelay = nullptr;
 	FloatProperty* c_BeltMagazineHipDrop = nullptr;
 	Vector3Property* c_BeltMagazineOffset = nullptr;

@@ -1,0 +1,81 @@
+{
+  "ReloadOnChange": true,
+  "Defaults": {
+    "PauseTicks": 10,
+    "ResumeTicks": 30,
+    "MagazineBoneNames": [
+      "magazine",
+      "clip",
+      "frame magazine"
+    ],
+    "PreferredMagazineBone": "magazine",
+    "ContinuousReload": false,
+    "AutoContinuousReload": false,
+    "FireWhileContinuousReload": false,
+    "UseEmptyReloadAnimOnly": false,
+    "TubeCapacity": 0
+  },
+  "Weapons": [
+    {
+      "Weapon": 1,
+      "Description": "Pistol",
+      "PauseTicks": 25,
+      "ResumeTicks": 35,
+      "MagazineBoneNames": [
+        "magazine",
+        "clip",
+        "frame magazine"
+      ],
+      "PreferredMagazineBone": "magazine"
+    },
+    {
+      "Weapon": 2,
+      "Description": "AssaultRifle",
+      "PauseTicks": 35,
+      "ResumeTicks": 45,
+      "MagazineBoneNames": [
+        "magazine",
+        "clip",
+        "frame magazine"
+      ],
+      "PreferredMagazineBone": "magazine"
+    },
+    {
+      "Weapon": 3,
+      "Description": "Shotgun",
+      "PauseTicks": 5,
+      "ResumeTicks": 10,
+      "MagazineBoneNames": [
+        "frame bullet"
+      ],
+      "PreferredMagazineBone": "frame bullet",
+      "ContinuousReload": true,
+      "AutoContinuousReload": true,
+      "FireWhileContinuousReload": true,
+      "UseEmptyReloadAnimOnly": true,
+      "TubeCapacity": 12
+    },
+    {
+      "Weapon": 4,
+      "Description": "RocketLauncher",
+      "PauseTicks": 60,
+      "ResumeTicks": 70,
+      "MagazineBoneNames": [
+        "frame tubes"
+      ],
+      "PreferredMagazineBone": "frame tubes"
+    },
+    {
+      "Weapon": 5,
+      "Description": "Sniper",
+      "PauseTicks": 30,
+      "ResumeTicks": 45,
+      "MagazineBoneNames": [
+        "magazine",
+        "clip",
+        "frame magazine"
+      ],
+      "PreferredMagazineBone": "magazine"
+    }
+  ]
+}

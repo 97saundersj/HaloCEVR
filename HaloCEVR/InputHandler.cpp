@@ -546,11 +546,13 @@ unsigned char InputHandler::UpdateCrouch()
 
 void InputHandler::ResetPhysicalReloadState()
 {
+	bBeltGripStartedReload = false;
 	Game::instance.ResetPhysicalReloadState();
 }
 
 void InputHandler::ResetPhysicalReloadCycle()
 {
+	bBeltGripStartedReload = false;
 	Game::instance.ResetPhysicalReloadCycle();
 }
 
@@ -570,6 +572,38 @@ WeaponDynamicObject* InputHandler::GetLocalWeaponObject()
 	return static_cast<WeaponDynamicObject*>(Helpers::GetDynamicObject(player->weapon));
 }
 
+bool InputHandler::IsOffHandNearBeltMagazine() const
+{
+	IVR* vr = Game::instance.GetVR();
+	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
+	Matrix4 offHandTransform = vr->GetControllerTransform(offHand, true);
+	Vector3 offHandPos = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
+	offHandPos *= Game::instance.MetresToWorld(1.0f);
+	offHandPos += Helpers::GetCamera().position;
+
+	const Vector3 beltPos = Game::instance.GetBeltMagazineWorldPosition();
+	const float grabDistance = Game::instance.c_BeltMagazineGrabDistance->Value();
+	const float grabDistanceSqr = grabDistance * grabDistance;
+	return (offHandPos - beltPos).lengthSqr() < grabDistanceSqr;
+}
+
+bool InputHandler::ShouldSuppressTwoHandAimForPhysicalReload() const
+{
+	if (!Game::instance.c_DisableEmptyMagazineAutoReload->Value())
+	{
+		return false;
+	}
+
+	if (Game::instance.bMagazineEjected
+		|| Game::instance.bMagazineGrabbed
+		|| Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle)
+	{
+		return true;
+	}
+
+	return Game::instance.ShouldShowBeltMagazine() && IsOffHandNearBeltMagazine();
+}
+
 static bool ShouldPausePhysicalReload(
 	uint16_t initialRemaining,
 	uint16_t currentRemaining,
@@ -585,10 +619,10 @@ static bool ShouldPausePhysicalReload(
 
 bool InputHandler::ShouldSuspendShotgunActiveReloadForFire() const
 {
-	if (!Game::instance.c_ShotgunFireWhileReloading->Value()
-		|| !Game::instance.c_ShotgunShellSession->Value()
+	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(Game::instance.GetCachedWeaponType());
+	if (!settings.FireWhileContinuousReload
+		|| !settings.ContinuousReload
 		|| !Game::instance.bShotgunShellSessionActive
-		|| Game::instance.GetCachedWeaponType() != WeaponType::Shotgun
 		|| Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PausedAtEject)
 	{
 		return false;
@@ -629,11 +663,11 @@ void InputHandler::PrepareShotgunFireDuringReload()
 
 void InputHandler::TryBeginShotgunLoadFromBelt()
 {
-	if (!Game::instance.c_ShotgunShellSession->Value()
+	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(Game::instance.GetCachedWeaponType());
+	if (!settings.ContinuousReload
 		|| !Game::instance.bShotgunShellSessionActive
-		|| Game::instance.GetCachedWeaponType() != WeaponType::Shotgun
 		|| Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle
-		|| !Game::instance.ShouldContinueShotgunShellSession())
+		|| !Game::instance.ShouldContinueContinuousReloadSession())
 	{
 		return;
 	}
@@ -649,10 +683,12 @@ void InputHandler::TryBeginShotgunLoadFromBelt()
 	const float grabDistance = Game::instance.c_BeltMagazineGrabDistance->Value();
 	const float grabDistanceSqr = grabDistance * grabDistance;
 	const bool offHandNearBelt = (offHandPos - beltPos).lengthSqr() < grabDistanceSqr;
-	const bool gripHeld = vr->GetBoolInput(TwoHandGrip);
+	bool gripChanged = false;
+	const bool gripHeld = vr->GetBoolInput(TwoHandGrip, gripChanged);
 
-	if (gripHeld && offHandNearBelt)
+	if (gripChanged && gripHeld && offHandNearBelt)
 	{
+		bBeltGripStartedReload = true;
 		BeginChainedShellReload();
 	}
 }
@@ -794,6 +830,18 @@ void InputHandler::UpdateReloadAnimationPause()
 			Game::instance.physicalReloadPhase = EPhysicalReloadPhase::PausedAtEject;
 			Game::instance.bMagazineEjected = true;
 			Game::instance.ResetPhysicalReloadBonePinState();
+
+			if (bBeltGripStartedReload)
+			{
+				bBeltGripStartedReload = false;
+				IVR* pauseVr = Game::instance.GetVR();
+				if (pauseVr->GetBoolInput(TwoHandGrip) && IsOffHandNearBeltMagazine())
+				{
+					Game::instance.bMagazineGrabbed = true;
+					bSuppressSwapUntilGripRelease = true;
+				}
+			}
+
 			if (Game::instance.c_LogPhysicalReloadDebug->Value())
 			{
 				const Vector3 beltPos = Game::instance.GetBeltMagazineWorldPosition();
@@ -843,10 +891,11 @@ void InputHandler::UpdateReloadAnimationPause()
 		}
 		else if (!Game::instance.bIsReloading)
 		{
-			if (Game::instance.ShouldContinueShotgunShellSession())
+			if (Game::instance.ShouldContinueContinuousReloadSession())
 			{
+				// Return to idle with the next shell on the belt; the player grabs from the pouch
+				// via TryBeginShotgunLoadFromBelt before the next reload animation starts.
 				ResetPhysicalReloadCycle();
-				BeginChainedShellReload();
 			}
 			else
 			{
@@ -859,8 +908,8 @@ void InputHandler::UpdateReloadAnimationPause()
 
 void InputHandler::BeginPhysicalReload()
 {
-	if (Game::instance.c_ShotgunShellSession->Value()
-		&& Game::instance.GetCachedWeaponType() == WeaponType::Shotgun)
+	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(Game::instance.GetCachedWeaponType());
+	if (settings.ContinuousReload)
 	{
 		Game::instance.bShotgunShellSessionActive = true;
 	}
@@ -966,11 +1015,12 @@ void InputHandler::HandlePhysicalMagazineGrabInsert()
 
 	const bool offHandNearBelt = (offHandPos - beltPos).lengthSqr() < grabDistanceSqr;
 	const bool offHandNearSocket = (offHandPos - socketPos).lengthSqr() < insertDistanceSqr;
-	const bool gripHeld = vr->GetBoolInput(TwoHandGrip);
+	bool gripChanged = false;
+	const bool gripHeld = vr->GetBoolInput(TwoHandGrip, gripChanged);
 
 	if (!Game::instance.bMagazineGrabbed)
 	{
-		if (gripHeld && offHandNearBelt)
+		if (gripChanged && gripHeld && offHandNearBelt)
 		{
 			Game::instance.bMagazineGrabbed = true;
 			bSuppressSwapUntilGripRelease = true;
@@ -1016,13 +1066,13 @@ void InputHandler::UpdatePhysicalMagazineReload()
 
 		if (reloadPressed && bReloadChanged)
 		{
+			const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(Game::instance.GetCachedWeaponType());
 			if (Game::instance.bShotgunShellSessionActive)
 			{
 				Game::instance.bShotgunShellSessionUserCancelled = true;
 				EndShotgunShellSession();
 			}
-			else if (Game::instance.GetCachedWeaponType() == WeaponType::Shotgun
-				&& Game::instance.c_ShotgunAutoShellSession->Value())
+			else if (settings.ContinuousReload && settings.AutoContinuousReload)
 			{
 				Game::instance.bShotgunShellSessionUserCancelled = true;
 			}
@@ -1033,7 +1083,7 @@ void InputHandler::UpdatePhysicalMagazineReload()
 			break;
 		}
 
-		if (Game::instance.ShouldAutoStartShotgunShellSession())
+		if (Game::instance.ShouldAutoStartContinuousReloadSession())
 		{
 			Game::instance.bShotgunShellSessionActive = true;
 		}
@@ -1273,8 +1323,7 @@ void InputHandler::UpdateTwoHandedHold(float handDistance, bool handsWithinSwapW
 	}
 
 	// Off-hand grip is used to grab the ejected magazine during physical reload.
-	if (Game::instance.c_DisableEmptyMagazineAutoReload->Value()
-		&& (Game::instance.bMagazineEjected || Game::instance.bMagazineGrabbed))
+	if (ShouldSuppressTwoHandAimForPhysicalReload())
 	{
 		Game::instance.bUseTwoHandAim = false;
 		return;

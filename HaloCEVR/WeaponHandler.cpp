@@ -61,62 +61,6 @@ static void ReferenceUpdateViewModelImpl(HaloID& id, Vector3* pos, Vector3* faci
 	}
 }
 
-bool WeaponHandler::IsMagazineBoneName(const char* name)
-{
-	if (!name || !name[0])
-	{
-		return false;
-	}
-
-	// Halo CE first-person weapons use a dedicated "frame magazine" node.
-	// Avoid substring matching — it incorrectly includes siblings linked in the
-	// bone tree (e.g. trigger, charging handle, display) via MarkMagazineSubtree.
-	return _stricmp(name, "frame magazine") == 0
-		|| _stricmp(name, "magazine") == 0
-		|| _stricmp(name, "clip") == 0
-		|| _stricmp(name, "frame tubes") == 0
-		|| _stricmp(name, "frame bullet") == 0;
-}
-
-static int GetMagazineBoneRootPriority(const char* name, WeaponType weaponType)
-{
-	if (!name || !name[0])
-	{
-		return 0;
-	}
-
-	switch (weaponType)
-	{
-	case WeaponType::Shotgun:
-		if (_stricmp(name, "frame bullet") == 0)
-		{
-			return 1;
-		}
-		break;
-
-	case WeaponType::RocketLauncher:
-		if (_stricmp(name, "frame tubes") == 0)
-		{
-			return 1;
-		}
-		break;
-
-	default:
-		if (_stricmp(name, "magazine") == 0 || _stricmp(name, "clip") == 0)
-		{
-			return 1;
-		}
-
-		if (_stricmp(name, "frame magazine") == 0)
-		{
-			return 2;
-		}
-		break;
-	}
-
-	return 0;
-}
-
 void WeaponHandler::MarkMagazineBone(int boneIndex)
 {
 	if (boneIndex >= 0 && boneIndex < 64)
@@ -220,7 +164,7 @@ bool WeaponHandler::ShouldShowBeltMagazine() const
 
 	if (IsShellByShellReloadWeapon()
 		&& Game::instance.bShotgunShellSessionActive
-		&& Game::instance.ShouldContinueShotgunShellSession()
+		&& Game::instance.ShouldContinueContinuousReloadSession()
 		&& Game::instance.physicalReloadPhase == EPhysicalReloadPhase::Idle)
 	{
 		return true;
@@ -251,8 +195,8 @@ int WeaponHandler::GetReloadExitFullAnimIndex() const
 
 int WeaponHandler::GetActiveReloadAnimIndex() const
 {
-	// Shotgun only has reload-empty / exit-empty clips (no reload-full); use those for every shell.
-	if (Game::instance.bPhysicalReloadFromEmpty || cachedViewModel.weaponType == WeaponType::Shotgun)
+	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType);
+	if (Game::instance.bPhysicalReloadFromEmpty || settings.UseEmptyReloadAnimOnly)
 	{
 		const int primary = cachedViewModel.reloadEmptyAnimIndex;
 		return primary >= 0 ? primary : cachedViewModel.reloadExitEmptyAnimIndex;
@@ -264,7 +208,8 @@ int WeaponHandler::GetActiveReloadAnimIndex() const
 
 int WeaponHandler::GetActiveReloadExitAnimIndex() const
 {
-	if (Game::instance.bPhysicalReloadFromEmpty || cachedViewModel.weaponType == WeaponType::Shotgun)
+	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType);
+	if (Game::instance.bPhysicalReloadFromEmpty || settings.UseEmptyReloadAnimOnly)
 	{
 		return cachedViewModel.reloadExitEmptyAnimIndex;
 	}
@@ -285,12 +230,13 @@ bool WeaponHandler::SupportsPhysicalMagazineReload() const
 
 bool WeaponHandler::IsShellByShellReloadWeapon() const
 {
-	return cachedViewModel.weaponType == WeaponType::Shotgun;
+	return Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType).ContinuousReload;
 }
 
 bool WeaponHandler::CanLoadAnotherShell() const
 {
-	if (!IsShellByShellReloadWeapon())
+	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType);
+	if (!IsShellByShellReloadWeapon() || settings.TubeCapacity == 0)
 	{
 		return false;
 	}
@@ -308,8 +254,7 @@ bool WeaponHandler::CanLoadAnotherShell() const
 	}
 
 	const Weapon& weapon = weaponObject->weaponData[0];
-	static constexpr uint16_t kShotgunTubeCapacity = 12;
-	return weapon.reserveAmmo > 0 && weapon.ammo < kShotgunTubeCapacity;
+	return weapon.reserveAmmo > 0 && weapon.ammo < settings.TubeCapacity;
 }
 
 int WeaponHandler::ResolveMagazineRootBoneIndex() const
@@ -557,6 +502,14 @@ Matrix4 WeaponHandler::GetDetachedMagazineOrientation(const Transform* outBoneTr
 
 	Matrix4 orientation;
 	TransformToMatrix4(orientationTransform, orientation);
+
+	Vector3 left = up.cross(forward);
+	if (left.lengthSqr() > 0.0001f)
+	{
+		left.normalize();
+		orientation.rotate(90.0f, left);
+	}
+
 	return orientation;
 }
 
@@ -1597,17 +1550,14 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 
 	for (int i = 0; i < animationData->NumBones && i < 64; i++)
 	{
-		const int priority = GetMagazineBoneRootPriority(boneArray[i].BoneName, weaponType);
+		const int priority = Game::instance.weaponManualReloadConfig.GetMagazineBonePriority(weaponType, boneArray[i].BoneName);
 		if (priority <= 0)
 		{
 			continue;
 		}
 
-		MarkMagazineBone(i);
-		cachedViewModel.bHasMagazineBones = true;
-
 		const int currentPriority = cachedViewModel.magazineRootBoneIndex >= 0
-			? GetMagazineBoneRootPriority(boneArray[cachedViewModel.magazineRootBoneIndex].BoneName, weaponType)
+			? Game::instance.weaponManualReloadConfig.GetMagazineBonePriority(weaponType, boneArray[cachedViewModel.magazineRootBoneIndex].BoneName)
 			: 0;
 		if (priority > currentPriority)
 		{
@@ -1615,8 +1565,14 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 		}
 
 #if DRAW_DEBUG_AIM
-		Logger::log << "[UpdateCache] Found magazine bone " << boneArray[i].BoneName << " @ " << i << std::endl;
+		Logger::log << "[UpdateCache] Found magazine bone candidate " << boneArray[i].BoneName << " @ " << i << std::endl;
 #endif
+	}
+
+	if (cachedViewModel.magazineRootBoneIndex >= 0)
+	{
+		cachedViewModel.bHasMagazineBones = true;
+		MarkMagazineBone(cachedViewModel.magazineRootBoneIndex);
 	}
 
 	if (cachedViewModel.bHasMagazineBones)
@@ -1624,8 +1580,10 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 		const char* rootName = cachedViewModel.magazineRootBoneIndex >= 0
 			? boneArray[cachedViewModel.magazineRootBoneIndex].BoneName
 			: "unknown";
+		const WeaponManualReloadSettings& reloadSettings = Game::instance.weaponManualReloadConfig.GetSettings(weaponType);
 		const bool bShellOnlyRoot = cachedViewModel.magazineRootBoneIndex >= 0
-			&& _stricmp(rootName, "frame bullet") == 0;
+			&& _stricmp(rootName, reloadSettings.PreferredMagazineBone.c_str()) == 0
+			&& reloadSettings.ContinuousReload;
 
 		if (cachedViewModel.magazineRootBoneIndex >= 0 && !bShellOnlyRoot)
 		{
