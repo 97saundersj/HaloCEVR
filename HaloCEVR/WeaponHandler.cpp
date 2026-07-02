@@ -164,8 +164,8 @@ bool WeaponHandler::ShouldShowBeltMagazine() const
 
 	if (IsShellByShellReloadWeapon()
 		&& Game::instance.bShotgunShellSessionActive
-		&& Game::instance.ShouldContinueContinuousReloadSession()
-		&& Game::instance.physicalReloadPhase == EPhysicalReloadPhase::Idle)
+		&& Game::instance.physicalReloadPhase == EPhysicalReloadPhase::Idle
+		&& CanLoadAnotherShell())
 	{
 		return true;
 	}
@@ -196,7 +196,7 @@ int WeaponHandler::GetReloadExitFullAnimIndex() const
 int WeaponHandler::GetActiveReloadAnimIndex() const
 {
 	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType);
-	if (Game::instance.bPhysicalReloadFromEmpty || settings.UseEmptyReloadAnimOnly)
+	if (Game::instance.bPhysicalReloadFromEmpty || settings.ContinuousReload)
 	{
 		const int primary = cachedViewModel.reloadEmptyAnimIndex;
 		return primary >= 0 ? primary : cachedViewModel.reloadExitEmptyAnimIndex;
@@ -209,7 +209,7 @@ int WeaponHandler::GetActiveReloadAnimIndex() const
 int WeaponHandler::GetActiveReloadExitAnimIndex() const
 {
 	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType);
-	if (Game::instance.bPhysicalReloadFromEmpty || settings.UseEmptyReloadAnimOnly)
+	if (Game::instance.bPhysicalReloadFromEmpty || settings.ContinuousReload)
 	{
 		return cachedViewModel.reloadExitEmptyAnimIndex;
 	}
@@ -235,8 +235,7 @@ bool WeaponHandler::IsShellByShellReloadWeapon() const
 
 bool WeaponHandler::CanLoadAnotherShell() const
 {
-	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType);
-	if (!IsShellByShellReloadWeapon() || settings.TubeCapacity == 0)
+	if (!IsShellByShellReloadWeapon() || cachedViewModel.magazineCapacity == 0)
 	{
 		return false;
 	}
@@ -254,7 +253,7 @@ bool WeaponHandler::CanLoadAnotherShell() const
 	}
 
 	const Weapon& weapon = weaponObject->weaponData[0];
-	return weapon.reserveAmmo > 0 && weapon.ammo < settings.TubeCapacity;
+	return weapon.reserveAmmo > 0 && weapon.ammo < cachedViewModel.magazineCapacity;
 }
 
 int WeaponHandler::ResolveMagazineRootBoneIndex() const
@@ -1436,6 +1435,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	cachedViewModel.reloadExitEmptyAnimIndex = -1;
 	cachedViewModel.reloadFullAnimIndex = -1;
 	cachedViewModel.reloadExitFullAnimIndex = -1;
+	cachedViewModel.magazineCapacity = 0;
 	memset(cachedViewModel.magazineHideBones, 0, sizeof(cachedViewModel.magazineHideBones));
 
 	Bone* boneArray = animationData->BoneArray;
@@ -1550,23 +1550,17 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 
 	for (int i = 0; i < animationData->NumBones && i < 64; i++)
 	{
-		const int priority = Game::instance.weaponManualReloadConfig.GetMagazineBonePriority(weaponType, boneArray[i].BoneName);
-		if (priority <= 0)
+		if (!Game::instance.weaponManualReloadConfig.IsMagazineBoneName(weaponType, boneArray[i].BoneName))
 		{
 			continue;
 		}
 
-		const int currentPriority = cachedViewModel.magazineRootBoneIndex >= 0
-			? Game::instance.weaponManualReloadConfig.GetMagazineBonePriority(weaponType, boneArray[cachedViewModel.magazineRootBoneIndex].BoneName)
-			: 0;
-		if (priority > currentPriority)
-		{
-			cachedViewModel.magazineRootBoneIndex = i;
-		}
+		cachedViewModel.magazineRootBoneIndex = i;
 
 #if DRAW_DEBUG_AIM
 		Logger::log << "[UpdateCache] Found magazine bone candidate " << boneArray[i].BoneName << " @ " << i << std::endl;
 #endif
+		break;
 	}
 
 	if (cachedViewModel.magazineRootBoneIndex >= 0)
@@ -1582,7 +1576,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 			: "unknown";
 		const WeaponManualReloadSettings& reloadSettings = Game::instance.weaponManualReloadConfig.GetSettings(weaponType);
 		const bool bShellOnlyRoot = cachedViewModel.magazineRootBoneIndex >= 0
-			&& _stricmp(rootName, reloadSettings.PreferredMagazineBone.c_str()) == 0
+			&& _stricmp(rootName, reloadSettings.MagazineBoneName.c_str()) == 0
 			&& reloadSettings.ContinuousReload;
 
 		if (cachedViewModel.magazineRootBoneIndex >= 0 && !bShellOnlyRoot)
@@ -1688,6 +1682,21 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 		return;
 	}
 
+	const WeaponManualReloadSettings& reloadSettings =
+		Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType);
+	cachedViewModel.magazineCapacity = reloadSettings.MagazineCapacity;
+
+	if (Game::instance.c_LogPhysicalReloadDebug->Value())
+	{
+		const WeaponDynamicObject* weaponObject = static_cast<const WeaponDynamicObject*>(weaponObj);
+		const Weapon& liveWeapon = weaponObject->weaponData[0];
+
+		Logger::log << "[WeaponHandler] magazineCapacity=" << cachedViewModel.magazineCapacity
+			<< " weaponType=" << static_cast<int>(cachedViewModel.weaponType)
+			<< " ammo=" << liveWeapon.ammo
+			<< " reserveAmmo=" << liveWeapon.reserveAmmo
+			<< std::endl;
+	}
 
 	Asset_GBXModel* model = Helpers::GetTypedAsset<Asset_GBXModel>(weapon->WeaponData->ViewModelID);
 	if (!model)

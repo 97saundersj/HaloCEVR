@@ -3,79 +3,43 @@
   "Defaults": {
     "PauseTicks": 10,
     "ResumeTicks": 30,
-    "MagazineBoneNames": [
-      "magazine",
-      "clip",
-      "frame magazine"
-    ],
-    "PreferredMagazineBone": "magazine",
-    "ContinuousReload": false,
-    "AutoContinuousReload": false,
-    "FireWhileContinuousReload": false,
-    "UseEmptyReloadAnimOnly": false,
-    "TubeCapacity": 0
+    "MagazineBoneName": "frame magazine",
+    "ContinuousReload": false
   },
   "Weapons": [
     {
       "Weapon": 1,
       "Description": "Pistol",
       "PauseTicks": 25,
-      "ResumeTicks": 35,
-      "MagazineBoneNames": [
-        "magazine",
-        "clip",
-        "frame magazine"
-      ],
-      "PreferredMagazineBone": "magazine"
+      "ResumeTicks": 35
     },
     {
       "Weapon": 2,
       "Description": "AssaultRifle",
       "PauseTicks": 35,
-      "ResumeTicks": 45,
-      "MagazineBoneNames": [
-        "magazine",
-        "clip",
-        "frame magazine"
-      ],
-      "PreferredMagazineBone": "magazine"
+      "ResumeTicks": 45
     },
     {
       "Weapon": 3,
       "Description": "Shotgun",
       "PauseTicks": 5,
       "ResumeTicks": 10,
-      "MagazineBoneNames": [
-        "frame bullet"
-      ],
-      "PreferredMagazineBone": "frame bullet",
+      "MagazineBoneName": "frame bullet",
       "ContinuousReload": true,
-      "AutoContinuousReload": true,
-      "FireWhileContinuousReload": true,
-      "UseEmptyReloadAnimOnly": true,
-      "TubeCapacity": 12
+      "MagazineCapacity": 12
     },
     {
       "Weapon": 4,
       "Description": "RocketLauncher",
       "PauseTicks": 60,
       "ResumeTicks": 70,
-      "MagazineBoneNames": [
-        "frame tubes"
-      ],
-      "PreferredMagazineBone": "frame tubes"
+      "MagazineBoneName": "frame tubes"
     },
     {
       "Weapon": 5,
       "Description": "Sniper",
       "PauseTicks": 30,
-      "ResumeTicks": 45,
-      "MagazineBoneNames": [
-        "magazine",
-        "clip",
-        "frame magazine"
-      ],
-      "PreferredMagazineBone": "magazine"
+      "ResumeTicks": 45
     }
   ]
 }

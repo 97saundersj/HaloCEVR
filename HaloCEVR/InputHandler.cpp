@@ -620,8 +620,7 @@ static bool ShouldPausePhysicalReload(
 bool InputHandler::ShouldSuspendShotgunActiveReloadForFire() const
 {
 	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(Game::instance.GetCachedWeaponType());
-	if (!settings.FireWhileContinuousReload
-		|| !settings.ContinuousReload
+	if (!settings.ContinuousReload
 		|| !Game::instance.bShotgunShellSessionActive
 		|| Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PausedAtEject)
 	{
@@ -1072,9 +1071,10 @@ void InputHandler::UpdatePhysicalMagazineReload()
 				Game::instance.bShotgunShellSessionUserCancelled = true;
 				EndShotgunShellSession();
 			}
-			else if (settings.ContinuousReload && settings.AutoContinuousReload)
+			else if (settings.ContinuousReload)
 			{
-				Game::instance.bShotgunShellSessionUserCancelled = true;
+				Game::instance.bShotgunShellSessionUserCancelled = false;
+				BeginPhysicalReload();
 			}
 			else
 			{

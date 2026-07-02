@@ -926,7 +926,6 @@ bool Game::ShouldAutoStartContinuousReloadSession() const
 {
 	const WeaponManualReloadSettings& settings = weaponManualReloadConfig.GetSettings(weaponHandler.GetCachedWeaponType());
 	return settings.ContinuousReload
-		&& settings.AutoContinuousReload
 		&& !bShotgunShellSessionUserCancelled
 		&& weaponHandler.IsShellByShellReloadWeapon()
 		&& weaponHandler.CanLoadAnotherShell()

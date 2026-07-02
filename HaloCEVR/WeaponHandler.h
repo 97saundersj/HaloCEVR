@@ -130,6 +130,7 @@ protected:
 		int reloadExitEmptyAnimIndex = -1;
 		int reloadFullAnimIndex = -1;
 		int reloadExitFullAnimIndex = -1;
+		uint16_t magazineCapacity = 0;
 		Vector3 magazineSocketPosition{};
 
 	} cachedViewModel;

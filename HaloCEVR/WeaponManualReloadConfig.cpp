@@ -6,8 +6,6 @@ namespace fs = std::filesystem;
 
 WeaponManualReloadConfigManager::WeaponManualReloadConfigManager()
 {
-	defaults.MagazineBoneNames = { "magazine", "clip", "frame magazine" };
-	defaults.PreferredMagazineBone = "magazine";
 	fallbackSettings = defaults;
 	fallbackSettings.Weapon = WeaponType::Unknown;
 
@@ -46,18 +44,9 @@ WeaponManualReloadSettings WeaponManualReloadConfigManager::ParseSettingsFromJso
 		settings.ResumeTicks = entry["ResumeTicks"];
 	}
 
-	if (entry.contains("MagazineBoneNames"))
+	if (entry.contains("MagazineBoneName"))
 	{
-		settings.MagazineBoneNames.clear();
-		for (const auto& boneName : entry["MagazineBoneNames"])
-		{
-			settings.MagazineBoneNames.push_back(boneName.get<std::string>());
-		}
-	}
-
-	if (entry.contains("PreferredMagazineBone"))
-	{
-		settings.PreferredMagazineBone = entry["PreferredMagazineBone"].get<std::string>();
+		settings.MagazineBoneName = entry["MagazineBoneName"].get<std::string>();
 	}
 
 	if (entry.contains("ContinuousReload"))
@@ -65,24 +54,13 @@ WeaponManualReloadSettings WeaponManualReloadConfigManager::ParseSettingsFromJso
 		settings.ContinuousReload = entry["ContinuousReload"];
 	}
 
-	if (entry.contains("AutoContinuousReload"))
+	if (entry.contains("MagazineCapacity"))
 	{
-		settings.AutoContinuousReload = entry["AutoContinuousReload"];
+		settings.MagazineCapacity = entry["MagazineCapacity"];
 	}
-
-	if (entry.contains("FireWhileContinuousReload"))
+	else if (entry.contains("WeaponCapacity"))
 	{
-		settings.FireWhileContinuousReload = entry["FireWhileContinuousReload"];
-	}
-
-	if (entry.contains("UseEmptyReloadAnimOnly"))
-	{
-		settings.UseEmptyReloadAnimOnly = entry["UseEmptyReloadAnimOnly"];
-	}
-
-	if (entry.contains("TubeCapacity"))
-	{
-		settings.TubeCapacity = entry["TubeCapacity"];
+		settings.MagazineCapacity = entry["WeaponCapacity"];
 	}
 
 	return settings;
@@ -116,8 +94,6 @@ void WeaponManualReloadConfigManager::LoadConfig() const
 	json jf = json::parse(ifs);
 
 	defaults = WeaponManualReloadSettings{};
-	defaults.MagazineBoneNames = { "magazine", "clip", "frame magazine" };
-	defaults.PreferredMagazineBone = "magazine";
 
 	try
 	{
@@ -183,30 +159,11 @@ const WeaponManualReloadSettings& WeaponManualReloadConfigManager::GetSettings(W
 
 bool WeaponManualReloadConfigManager::IsMagazineBoneName(WeaponType type, const char* name) const
 {
-	return GetMagazineBonePriority(type, name) > 0;
-}
-
-int WeaponManualReloadConfigManager::GetMagazineBonePriority(WeaponType type, const char* name) const
-{
 	if (!name || !name[0])
 	{
-		return 0;
+		return false;
 	}
 
 	const WeaponManualReloadSettings& settings = GetSettings(type);
-
-	if (MatchesBoneName(name, settings.PreferredMagazineBone))
-	{
-		return 2;
-	}
-
-	for (const std::string& boneName : settings.MagazineBoneNames)
-	{
-		if (MatchesBoneName(name, boneName))
-		{
-			return 1;
-		}
-	}
-
-	return 0;
+	return MatchesBoneName(name, settings.MagazineBoneName);
 }

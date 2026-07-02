@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <list>
 #include <string>
-#include <vector>
 #include "WeaponHandler.h"
 
 using json = nlohmann::json;
@@ -14,13 +13,9 @@ struct WeaponManualReloadSettings
 	std::string Description;
 	int PauseTicks = 10;
 	int ResumeTicks = 30;
-	std::vector<std::string> MagazineBoneNames;
-	std::string PreferredMagazineBone;
+	std::string MagazineBoneName = "frame magazine";
 	bool ContinuousReload = false;
-	bool AutoContinuousReload = false;
-	bool FireWhileContinuousReload = false;
-	bool UseEmptyReloadAnimOnly = false;
-	uint16_t TubeCapacity = 0;
+	uint16_t MagazineCapacity = 0;
 };
 
 class WeaponManualReloadConfigManager
@@ -31,7 +26,6 @@ public:
 	void LoadConfig() const;
 	const WeaponManualReloadSettings& GetSettings(WeaponType type) const;
 	bool IsMagazineBoneName(WeaponType type, const char* name) const;
-	int GetMagazineBonePriority(WeaponType type, const char* name) const;
 
 	mutable std::filesystem::file_time_type Version;
 	mutable bool ReloadOnChange = true;
