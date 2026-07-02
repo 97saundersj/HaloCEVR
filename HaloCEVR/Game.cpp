@@ -1383,8 +1383,8 @@ void Game::SetupConfigs()
 	c_HorizontalVehicleTurnAmount = config.RegisterFloat("HorizontalVehicleTurnAmount", "Rotation in degrees per second the view will turn horizontally when in vehicles (<0 to invert)", 90.0f);
 	c_VerticalVehicleTurnAmount = config.RegisterFloat("VerticalVehicleTurnAmount", "Rotation in degrees per second the view will turn vertically when in vehicles (<0 to invert)", 45.0f);
 	c_VehicleViewMode = config.RegisterInt("VehicleViewMode", "Experimental vehicle view mode (0 = disabled, 1 = first-person warthog driver prototype)", 0);
-	c_WarthogDriverCameraOffset = config.RegisterVector3("WarthogDriverCameraOffset", "Experimental first-person warthog driver camera anchor offset in metres, relative to the vehicle (forward, left, up)", Vector3(0.2f, 0.15f, 0.9f));
-	c_VehicleViewHeadMotionScale = config.RegisterVector3("VehicleViewHeadMotionScale", "Experimental multiplier for head movement while using the first-person warthog driver view (sideways, forward, vertical)", Vector3(1.0f, 0.35f, 0.35f));
+	c_WarthogDriverCameraOffset = config.RegisterVector3("WarthogDriverCameraOffset", "Experimental first-person warthog driver camera anchor offset in metres, relative to the vehicle (forward, left, up)", Vector3(-0.5f, 0.5f, 1.0f));
+	c_VehicleViewHeadMotionScale = config.RegisterVector3("VehicleViewHeadMotionScale", "Experimental multiplier for head movement while using the first-person warthog driver view (sideways, forward, vertical)", Vector3(1.0f, 1.0f, 1.0f));
 	c_VehicleViewSmoothing = config.RegisterFloat("VehicleViewSmoothing", "Experimental smoothing applied to the first-person warthog driver camera anchor (0 disables smoothing)", 10.0f);
 	c_VehicleViewPitchMin = config.RegisterFloat("VehicleViewPitchMin", "Experimental minimum pitch angle in degrees for the first-person warthog driver view", -40.0f);
 	c_VehicleViewPitchMax = config.RegisterFloat("VehicleViewPitchMax", "Experimental maximum pitch angle in degrees for the first-person warthog driver view", 35.0f);
