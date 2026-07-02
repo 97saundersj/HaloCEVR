@@ -198,6 +198,9 @@ protected:
 	Vector3 vehicleViewAnchorPosition = Vector3(0.0f, 0.0f, 0.0f);
 	Vector3 vehicleViewAnchorFacing = Vector3(1.0f, 0.0f, 0.0f);
 	Vector3 vehicleViewAnchorUp = Vector3(0.0f, 0.0f, 1.0f);
+	mutable bool bVehicleDriverHeadRelativeValid = false;
+	mutable Matrix3 vehicleDriverHeadRelativeRot;
+	mutable Matrix3 vehicleDriverLastHeadRot;
 
 	ERenderState mirrorSource;
 
