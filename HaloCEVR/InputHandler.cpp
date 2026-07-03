@@ -13,11 +13,6 @@
 #define ApplyBoolInput(x) controls.##x = vr->GetBoolInput(x) ? 127 : 0;
 #define ApplyImpulseBoolInput(x) controls.##x = vr->GetBoolInput(x, bHasChanged) && bHasChanged ? 127 : 0;
 
-bool InputHandler::ShouldBlockAutoReloadStart() const
-{
-	return physicalReload.ShouldBlockAutoReloadStart();
-}
-
 void InputHandler::RegisterInputs()
 {
 	IVR* vr = Game::instance.GetVR();
@@ -256,7 +251,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		SendInput(1, &input, sizeof(INPUT));
 	}
 
-	UpdatePhysicalMagazineReload();
+	physicalReload.Update();
 
 	UpdateHandsProximity();
 
@@ -507,51 +502,6 @@ unsigned char InputHandler::UpdateCrouch()
 	}
 
 	return 0;
-}
-
-void InputHandler::ResetPhysicalReloadState()
-{
-	physicalReload.ResetState();
-}
-
-void InputHandler::ResetPhysicalReloadCycle()
-{
-	physicalReload.ResetCycle();
-}
-
-void InputHandler::EndShotgunShellSession()
-{
-	physicalReload.EndShotgunShellSession();
-}
-
-void InputHandler::BeginChainedShellReload()
-{
-	physicalReload.BeginChainedShellReload();
-}
-
-void InputHandler::PrepareShotgunFireDuringReload()
-{
-	physicalReload.PrepareShotgunFireDuringReload();
-}
-
-void InputHandler::SuspendShotgunActiveReloadForFire()
-{
-	physicalReload.SuspendShotgunActiveReloadForFire();
-}
-
-void InputHandler::TryBeginShotgunLoadFromBelt()
-{
-	physicalReload.TryBeginShotgunLoadFromBelt();
-}
-
-void InputHandler::ApplyPhysicalReloadAnimPin()
-{
-	physicalReload.ApplyAnimPin();
-}
-
-void InputHandler::UpdatePhysicalMagazineReload()
-{
-	physicalReload.Update();
 }
 
 WeaponDynamicObject* InputHandler::GetLocalWeaponObject()

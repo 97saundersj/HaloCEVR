@@ -654,7 +654,7 @@ void __declspec(naked) Hooks::H_SetViewModelPosition()
 
 void Hooks::H_HandleInputs()
 {
-	Game::instance.PrepareShotgunFireDuringReload();
+	Game::instance.GetPhysicalReload().PrepareShotgunFireDuringReload();
 
 	HandleInputs.Original();
 
@@ -941,7 +941,7 @@ void Hooks::H_ReloadStart(HaloID param1, short param2, bool param3)
 	VR_PROFILE_SCOPE(Hooks_ReloadStart);
 
 	// Block auto-reload from starting.
-	if (Game::instance.ShouldBlockAutoReloadStart())
+	if (Game::instance.GetPhysicalReload().ShouldBlockAutoReloadStart())
 	{
 		return;
 	}

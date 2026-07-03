@@ -21,6 +21,7 @@ public:
 	void ResetCycle();
 	void EndShotgunShellSession();
 	void PrepareShotgunFireDuringReload();
+	void HandleReloadEnd();
 
 	bool ShouldBlockAutoReloadStart() const;
 	void SuppressVanillaReloadControl(unsigned char& reloadControl) const;
@@ -28,10 +29,14 @@ public:
 	bool IsBlockingWeaponHandSwap() const;
 	void TickSwapSuppression();
 	bool ShouldSkipWeaponHandSwapDuringReload() const;
+	bool ShouldContinueContinuousReloadSession() const;
+	bool ShouldAutoStartContinuousReloadSession() const;
 
 	void BeginChainedShellReload();
 	void SuspendShotgunActiveReloadForFire();
 	void TryBeginShotgunLoadFromBelt();
+	void TriggerWeaponReload();
+	void TriggerWeaponReloadEnd();
 
 private:
 	InputHandler& input;
@@ -39,6 +44,7 @@ private:
 	bool bBeltGripStartedReload = false;
 	bool bSuppressSwapUntilGripRelease = false;
 
+	void ResetCycleCore();
 	bool IsOffHandNearBeltMagazine() const;
 	bool ShouldSuspendShotgunActiveReloadForFire() const;
 	void UpdateReloadAnimationPause();

@@ -350,8 +350,10 @@ void WeaponHandler::CaptureGripFromResumePose(HaloID& id, Vector3* pos, Vector3*
 	// Find the replay frame that corresponds to the resume tick.
 	// The replay buffer records the live animation during the eject pause; at the resume tick
 	// the hand is holding the fresh magazine before insertion — the correct grip frame.
-	const int pauseTicks = Game::instance.GetPhysicalReloadPauseTicks();
-	const int resumeTicks = Game::instance.GetPhysicalReloadResumeTicks();
+	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(
+		Game::instance.GetWeaponHandler().GetCachedWeaponType());
+	const int pauseTicks = settings.PauseTicks;
+	const int resumeTicks = settings.ResumeTicks;
 	const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
 	const float skipSeconds = static_cast<float>(skipTicks) / 30.0f;
 
@@ -988,7 +990,7 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 	if (bShouldUpdateCache)
 	{
 		UpdateCache(id, animationData);
-		Game::instance.ResetPhysicalReloadState();
+		Game::instance.GetPhysicalReload().ResetState();
 	}
 
 	ApplyPhysicalReloadBonePin(id, boneTransforms);
@@ -1413,7 +1415,7 @@ void WeaponHandler::LogViewModelBoneHierarchy(AssetData_ModelAnimations* animati
 void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animationData)
 {
 	Game::instance.bShotgunShellSessionUserCancelled = false;
-	Game::instance.EndShotgunShellSession();
+	Game::instance.GetPhysicalReload().EndShotgunShellSession();
 
 	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0 || animationData->NumBones > 256)
 	{

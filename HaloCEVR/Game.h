@@ -62,36 +62,6 @@ public:
 	bool GetCalculatedHandPositions(Matrix4& controllerTransform, Vector3& dominantHandPos, Vector3& offHand); 
 	void ReloadStart(HaloID param1, short param2, bool param3);
 	void ReloadEnd(short param1, HaloID param2);
-	bool ShouldBlockAutoReloadStart() const;
-	void TriggerWeaponReload();
-	void TriggerWeaponReloadEnd();
-	void ResetPhysicalReloadState();
-	void ResetPhysicalReloadCycle();
-	void EndShotgunShellSession();
-	void PrepareShotgunFireDuringReload();
-	bool ShouldContinueContinuousReloadSession() const;
-	bool ShouldAutoStartContinuousReloadSession() const;
-	void ApplyPhysicalReloadAnimPin();
-	void ClearPhysicalReloadBoneSnapshot();
-	void ResetPhysicalReloadBonePinState();
-	int GetPhysicalReloadPauseTicks() const;
-	int GetPhysicalReloadResumeTicks() const;
-	void SetPhysicalReloadReplaySkipSeconds(float skipSeconds);
-	int GetReloadEmptyAnimIndex() const;
-	int GetReloadExitEmptyAnimIndex() const;
-	int GetReloadFullAnimIndex() const;
-	int GetReloadExitFullAnimIndex() const;
-	int GetActiveReloadAnimIndex() const;
-	int GetActiveReloadExitAnimIndex() const;
-	bool HasPhysicalReloadReplay() const;
-	bool IsPhysicalReloadReplayComplete() const;
-	WeaponType GetCachedWeaponType() const;
-	bool IsLocalMagazineEmpty() const;
-	bool HasMagazineBones() const;
-	bool SupportsPhysicalMagazineReload() const;
-	bool ShouldShowBeltMagazine() const;
-	Vector3 GetBeltMagazineWorldPosition() const;
-	Vector3 GetMagazineSocketWorldPosition() const;
 
 	void UpdateInputs();
 	void CalculateSmoothedInput();
@@ -115,6 +85,12 @@ public:
 	float WorldToMetres(float w) const;
 
 	inline IVR* GetVR() const { return vr; }
+
+	PhysicalReloadController& GetPhysicalReload() { return inputHandler.physicalReload; }
+	const PhysicalReloadController& GetPhysicalReload() const { return inputHandler.physicalReload; }
+
+	WeaponHandler& GetWeaponHandler() { return weaponHandler; }
+	const WeaponHandler& GetWeaponHandler() const { return weaponHandler; }
 
 	UINT backBufferWidth = 600;
 	UINT backBufferHeight = 600;

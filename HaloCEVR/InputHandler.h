@@ -22,16 +22,7 @@ public:
 	bool GetCalculatedHandPositions(Matrix4& controllerTransform, Vector3& dominantHandPos, Vector3& offHand);
 	void CalculateSmoothedInput();
 
-	bool ShouldBlockAutoReloadStart() const;
-	void UpdatePhysicalMagazineReload();
-	void ResetPhysicalReloadState();
-	void ResetPhysicalReloadCycle();
-	void EndShotgunShellSession();
-	void BeginChainedShellReload();
-	void PrepareShotgunFireDuringReload();
-	void SuspendShotgunActiveReloadForFire();
-	void TryBeginShotgunLoadFromBelt();
-	void ApplyPhysicalReloadAnimPin();
+	PhysicalReloadController physicalReload;
 
 	Vector3 smoothedPosition = Vector3(0.0f, 0.0f, 0.0f);
 
@@ -80,9 +71,6 @@ protected:
 
 	InputBindingID SwapWeaponHand = 0;
 	InputBindingID OffhandSwapWeaponHand = 0;
-
-private:
-	PhysicalReloadController physicalReload;
 
 	bool IsHandInHolster(const Vector3& handPos, const Vector3& holsterPos, const float& holsterActivationDistance);
 };
