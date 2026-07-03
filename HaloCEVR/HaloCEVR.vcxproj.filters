@@ -138,6 +138,9 @@
     <ClCompile Include="WeaponManualReloadConfig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Helpers\PhysicalReload.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Hooking\FunctionTypedefs.h">
@@ -276,6 +279,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="WeaponManualReloadConfig.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Helpers\PhysicalReload.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

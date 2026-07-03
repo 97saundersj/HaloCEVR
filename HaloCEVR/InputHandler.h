@@ -1,12 +1,17 @@
 #pragma once
 #include "VR/IVR.h"
+#include "Helpers/PhysicalReload.h"
 #include <chrono>
 
 struct WeaponDynamicObject;
 
 class InputHandler
 {
+	friend class PhysicalReloadController;
+
 public:
+	InputHandler() : physicalReload(*this) {}
+
 	void RegisterInputs();
 	void UpdateRegisteredInputs();
 	void UpdateInputs(bool bInVehicle);
@@ -30,30 +35,19 @@ public:
 
 	Vector3 smoothedPosition = Vector3(0.0f, 0.0f, 0.0f);
 
-	// Track previous yaw offset to detect snap turns for weapon position smoothing
 	float lastSmoothingYawOffset = 0.0f;
 	bool bLastYawInitialized = false;
 
 protected:
-
-
 	unsigned char UpdateFlashlight();
 	unsigned char UpdateHolsterSwitchWeapons();
 	unsigned char UpdateMelee();
 	unsigned char UpdateCrouch();
 
-	// Update Controls that rely on the distance between hands
 	void UpdateHandsProximity();
 	void CheckSwapWeaponHand();
 	void UpdateTwoHandedHold(float handDistance, bool handsWithinSwapWeaponDistance);
 
-	void UpdateReloadAnimationPause();
-	void HandlePhysicalMagazineGrabInsert();
-	void BeginPhysicalReload();
-	void ResumePhysicalReloadAnimation();
-	bool IsOffHandNearBeltMagazine() const;
-	bool ShouldSuppressTwoHandAimForPhysicalReload() const;
-	bool ShouldSuspendShotgunActiveReloadForFire() const;
 	static WeaponDynamicObject* GetLocalWeaponObject();
 
 	char lastSnapState = 0;
@@ -64,13 +58,7 @@ protected:
 
 	bool bWasGripping = false;
 	bool bWasSwappingHands = false;
-	// Set while the off-hand grip is held to grab/insert a magazine during physical reload.
-	// Blocks weapon-hand swapping until that grip is released, so the insert hold isn't read as a swap.
-	bool bSuppressSwapUntilGripRelease = false;
-	// Set when a belt grip press starts a chained shell reload; cleared on pause so the same
-	// held grip can pick up the shell without a second press.
-	bool bBeltGripStartedReload = false;
-	
+
 	InputBindingID Jump = 0;
 	InputBindingID SwitchGrenades = 0;
 	InputBindingID Interact = 0;
@@ -86,7 +74,7 @@ protected:
 	InputBindingID Reload = 0;
 	InputBindingID Move = 0;
 	InputBindingID Look = 0;
-	
+
 	InputBindingID Recentre = 0;
 	InputBindingID TwoHandGrip = 0;
 
@@ -94,6 +82,7 @@ protected:
 	InputBindingID OffhandSwapWeaponHand = 0;
 
 private:
+	PhysicalReloadController physicalReload;
+
 	bool IsHandInHolster(const Vector3& handPos, const Vector3& holsterPos, const float& holsterActivationDistance);
 };
-

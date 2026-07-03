@@ -20,14 +20,6 @@
 
 enum class ERenderState { UNKNOWN, LEFT_EYE, RIGHT_EYE, GAME, SCOPE};
 
-enum class EPhysicalReloadPhase
-{
-	Idle,
-	PlayingEject,
-	PausedAtEject,
-	PlayingFinish
-};
-
 class Game
 {
 public:

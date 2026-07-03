@@ -163,7 +163,7 @@ protected:
 	float reloadReplaySkipSeconds = 0.0f;
 	bool bReloadReplaying = false;
 	bool bReloadReplayComplete = false;
-	int lastBonePinPhase = 0; // EPhysicalReloadPhase as int (enum lives in Game.h, included after)
+	int lastBonePinPhase = 0; // EPhysicalReloadPhase::Idle (defined in Helpers/PhysicalReload.h)
 
 	// Magazine position in frame-gun local space at reload start (mag seated in well).
 	bool bHasReloadStartMagSocket = false;

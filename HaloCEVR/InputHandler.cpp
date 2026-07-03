@@ -5,8 +5,6 @@
 #include "Helpers/Menus.h"
 #include "Helpers/Maths.h"
 #include "Helpers/Objects.h"
-#include "Helpers/FirstPersonAnim.h"
-#include "Helpers/Sound.h"
 #include "Logger.h"
 
 
@@ -15,42 +13,9 @@
 #define ApplyBoolInput(x) controls.##x = vr->GetBoolInput(x) ? 127 : 0;
 #define ApplyImpulseBoolInput(x) controls.##x = vr->GetBoolInput(x, bHasChanged) && bHasChanged ? 127 : 0;
 
-static void SuppressVanillaReloadControl(unsigned char& reloadControl)
-{
-	if (!Game::instance.c_DisableEmptyMagazineAutoReload->Value())
-	{
-		return;
-	}
-
-	if (Game::instance.bUse3DOFAiming || !Game::instance.SupportsPhysicalMagazineReload())
-	{
-		return;
-	}
-
-	// Always zero — physical reload is started via BeginPhysicalReload on VR edge input.
-	reloadControl = 0;
-}
-
 bool InputHandler::ShouldBlockAutoReloadStart() const
 {
-	if (!Game::instance.c_DisableEmptyMagazineAutoReload->Value())
-	{
-		return false;
-	}
-
-	if (Game::instance.bUse3DOFAiming)
-	{
-		IVR* vr = Game::instance.GetVR();
-		return !vr->GetBoolInput(Reload);
-	}
-
-	if (!Game::instance.SupportsPhysicalMagazineReload())
-	{
-		IVR* vr = Game::instance.GetVR();
-		return !vr->GetBoolInput(Reload);
-	}
-
-	return !Game::instance.bManualPhysicalReloadPending;
+	return physicalReload.ShouldBlockAutoReloadStart();
 }
 
 void InputHandler::RegisterInputs()
@@ -133,7 +98,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
-		SuppressVanillaReloadControl(controls.Reload);
+		physicalReload.SuppressVanillaReloadControl(controls.Reload);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
@@ -153,7 +118,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
-		SuppressVanillaReloadControl(controls.Reload);
+		physicalReload.SuppressVanillaReloadControl(controls.Reload);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
@@ -546,19 +511,47 @@ unsigned char InputHandler::UpdateCrouch()
 
 void InputHandler::ResetPhysicalReloadState()
 {
-	bBeltGripStartedReload = false;
-	Game::instance.ResetPhysicalReloadState();
+	physicalReload.ResetState();
 }
 
 void InputHandler::ResetPhysicalReloadCycle()
 {
-	bBeltGripStartedReload = false;
-	Game::instance.ResetPhysicalReloadCycle();
+	physicalReload.ResetCycle();
 }
 
 void InputHandler::EndShotgunShellSession()
 {
-	Game::instance.ResetPhysicalReloadState();
+	physicalReload.EndShotgunShellSession();
+}
+
+void InputHandler::BeginChainedShellReload()
+{
+	physicalReload.BeginChainedShellReload();
+}
+
+void InputHandler::PrepareShotgunFireDuringReload()
+{
+	physicalReload.PrepareShotgunFireDuringReload();
+}
+
+void InputHandler::SuspendShotgunActiveReloadForFire()
+{
+	physicalReload.SuspendShotgunActiveReloadForFire();
+}
+
+void InputHandler::TryBeginShotgunLoadFromBelt()
+{
+	physicalReload.TryBeginShotgunLoadFromBelt();
+}
+
+void InputHandler::ApplyPhysicalReloadAnimPin()
+{
+	physicalReload.ApplyAnimPin();
+}
+
+void InputHandler::UpdatePhysicalMagazineReload()
+{
+	physicalReload.Update();
 }
 
 WeaponDynamicObject* InputHandler::GetLocalWeaponObject()
@@ -571,547 +564,6 @@ WeaponDynamicObject* InputHandler::GetLocalWeaponObject()
 
 	return static_cast<WeaponDynamicObject*>(Helpers::GetDynamicObject(player->weapon));
 }
-
-bool InputHandler::IsOffHandNearBeltMagazine() const
-{
-	IVR* vr = Game::instance.GetVR();
-	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
-	Matrix4 offHandTransform = vr->GetControllerTransform(offHand, true);
-	Vector3 offHandPos = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
-	offHandPos *= Game::instance.MetresToWorld(1.0f);
-	offHandPos += Helpers::GetCamera().position;
-
-	const Vector3 beltPos = Game::instance.GetBeltMagazineWorldPosition();
-	const float grabDistance = Game::instance.c_BeltMagazineGrabDistance->Value();
-	const float grabDistanceSqr = grabDistance * grabDistance;
-	return (offHandPos - beltPos).lengthSqr() < grabDistanceSqr;
-}
-
-bool InputHandler::ShouldSuppressTwoHandAimForPhysicalReload() const
-{
-	if (!Game::instance.c_DisableEmptyMagazineAutoReload->Value())
-	{
-		return false;
-	}
-
-	if (Game::instance.bMagazineEjected
-		|| Game::instance.bMagazineGrabbed
-		|| Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle)
-	{
-		return true;
-	}
-
-	return Game::instance.ShouldShowBeltMagazine() && IsOffHandNearBeltMagazine();
-}
-
-static bool ShouldPausePhysicalReload(
-	uint16_t initialRemaining,
-	uint16_t currentRemaining,
-	int pauseTicks)
-{
-	if (pauseTicks <= 0 || initialRemaining <= currentRemaining)
-	{
-		return false;
-	}
-
-	return (initialRemaining - currentRemaining) >= static_cast<uint16_t>(pauseTicks);
-}
-
-bool InputHandler::ShouldSuspendShotgunActiveReloadForFire() const
-{
-	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(Game::instance.GetCachedWeaponType());
-	if (!settings.ContinuousReload
-		|| !Game::instance.bShotgunShellSessionActive
-		|| Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PausedAtEject)
-	{
-		return false;
-	}
-
-	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
-	if (!weaponObject || weaponObject->weaponData[0].ammo == 0)
-	{
-		return false;
-	}
-
-	return Game::instance.GetVR()->GetBoolInput(Fire);
-}
-
-void InputHandler::SuspendShotgunActiveReloadForFire()
-{
-	Game::instance.ResetPhysicalReloadCycle();
-
-	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
-	if (weaponObject)
-	{
-		weaponObject->weaponData[0].reloadState = 0;
-	}
-
-	Game::instance.bIsReloading = false;
-	Helpers::ResumePhysicalReloadSounds(false);
-}
-
-void InputHandler::PrepareShotgunFireDuringReload()
-{
-	if (!ShouldSuspendShotgunActiveReloadForFire())
-	{
-		return;
-	}
-
-	SuspendShotgunActiveReloadForFire();
-}
-
-void InputHandler::TryBeginShotgunLoadFromBelt()
-{
-	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(Game::instance.GetCachedWeaponType());
-	if (!settings.ContinuousReload
-		|| !Game::instance.bShotgunShellSessionActive
-		|| Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle
-		|| !Game::instance.ShouldContinueContinuousReloadSession())
-	{
-		return;
-	}
-
-	IVR* vr = Game::instance.GetVR();
-	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
-	Matrix4 offHandTransform = vr->GetControllerTransform(offHand, true);
-	Vector3 offHandPos = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
-	offHandPos *= Game::instance.MetresToWorld(1.0f);
-	offHandPos += Helpers::GetCamera().position;
-
-	const Vector3 beltPos = Game::instance.GetBeltMagazineWorldPosition();
-	const float grabDistance = Game::instance.c_BeltMagazineGrabDistance->Value();
-	const float grabDistanceSqr = grabDistance * grabDistance;
-	const bool offHandNearBelt = (offHandPos - beltPos).lengthSqr() < grabDistanceSqr;
-	bool gripChanged = false;
-	const bool gripHeld = vr->GetBoolInput(TwoHandGrip, gripChanged);
-
-	if (gripChanged && gripHeld && offHandNearBelt)
-	{
-		bBeltGripStartedReload = true;
-		BeginChainedShellReload();
-	}
-}
-
-void InputHandler::ApplyPhysicalReloadAnimPin()
-{
-	if (Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PausedAtEject)
-	{
-		return;
-	}
-
-	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
-	if (!weaponObject)
-	{
-		return;
-	}
-
-	Weapon& weapon = weaponObject->weaponData[0];
-
-	if (Game::instance.frozenReloadRemaining > 0)
-	{
-		weapon.reloadRemaining = Game::instance.frozenReloadRemaining;
-	}
-	else
-	{
-		weapon.reloadRemaining = 9999;
-		Game::instance.frozenReloadRemaining = 9999;
-	}
-
-	weapon.reloadState = 1;
-
-	const uint16_t pinnedAnim = Game::instance.pausedReloadAnimIndex != 0
-		? Game::instance.pausedReloadAnimIndex
-		: static_cast<uint16_t>(Game::instance.GetActiveReloadAnimIndex());
-	const uint16_t pinnedFrame = Game::instance.pausedReloadAnimFrame;
-
-	if (pinnedAnim != 0xFFFF)
-	{
-		weaponObject->animation = pinnedAnim;
-	}
-
-	weaponObject->animFrame = pinnedFrame;
-
-	if (Helpers::HasFirstPersonAnimBase())
-	{
-		if (pinnedAnim != 0xFFFF)
-		{
-			Helpers::SetFirstPersonBaseAnimId(pinnedAnim);
-		}
-
-		Helpers::SetFirstPersonBaseAnimFrame(pinnedFrame);
-	}
-}
-
-void InputHandler::UpdateReloadAnimationPause()
-{
-	if (Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PlayingEject
-		&& Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PausedAtEject
-		&& Game::instance.physicalReloadPhase != EPhysicalReloadPhase::PlayingFinish)
-	{
-		return;
-	}
-
-	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
-	if (!weaponObject)
-	{
-		ResetPhysicalReloadState();
-		return;
-	}
-
-	const uint16_t fpAnimId = Helpers::GetFirstPersonBaseAnimId();
-	const uint16_t fpAnimFrame = Helpers::GetFirstPersonBaseAnimFrame();
-
-	static EPhysicalReloadPhase lastLoggedPhase = EPhysicalReloadPhase::Idle;
-	static int logFrameCounter = 0;
-	const EPhysicalReloadPhase currentPhase = Game::instance.physicalReloadPhase;
-	const bool phaseChanged = currentPhase != lastLoggedPhase;
-	if (phaseChanged)
-	{
-		logFrameCounter = 0;
-		lastLoggedPhase = currentPhase;
-	}
-	else
-	{
-		logFrameCounter++;
-	}
-
-	if (Game::instance.c_LogPhysicalReloadFrames->Value()
-		&& (Game::instance.bIsReloading || currentPhase != EPhysicalReloadPhase::Idle)
-		&& (phaseChanged
-			|| currentPhase == EPhysicalReloadPhase::PlayingEject
-			|| (currentPhase == EPhysicalReloadPhase::PausedAtEject && logFrameCounter % 30 == 0)
-			|| currentPhase == EPhysicalReloadPhase::PlayingFinish))
-	{
-		const uint16_t reloadElapsed = Game::instance.initialReloadRemaining > weaponObject->weaponData[0].reloadRemaining
-			? Game::instance.initialReloadRemaining - weaponObject->weaponData[0].reloadRemaining
-			: 0;
-		Logger::log << "[PhysicalReload] weapon=" << static_cast<int>(Game::instance.GetCachedWeaponType())
-			<< " phase=" << static_cast<int>(currentPhase)
-			<< " pauseTicks=" << Game::instance.GetPhysicalReloadPauseTicks()
-			<< " resumeTicks=" << Game::instance.GetPhysicalReloadResumeTicks()
-			<< " reloadElapsed=" << reloadElapsed
-			<< " fpAnim=" << fpAnimId
-			<< " fpFrame=" << fpAnimFrame
-			<< " reloadEmptyIdx=" << Game::instance.GetActiveReloadAnimIndex()
-			<< " reloadState=" << weaponObject->weaponData[0].reloadState
-			<< " reloadRemaining=" << weaponObject->weaponData[0].reloadRemaining
-			<< " initialRemaining=" << Game::instance.initialReloadRemaining
-			<< " ammo=" << weaponObject->weaponData[0].ammo
-			<< std::endl;
-	}
-
-	if (Game::instance.physicalReloadPhase == EPhysicalReloadPhase::PlayingEject)
-	{
-		if (!Game::instance.bIsReloading)
-		{
-			EndShotgunShellSession();
-			return;
-		}
-
-		if (Game::instance.initialReloadRemaining == 0)
-		{
-			Game::instance.initialReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
-		}
-
-		const int pauseTicks = Game::instance.GetPhysicalReloadPauseTicks();
-		const int reloadAnimIndex = Game::instance.GetActiveReloadAnimIndex();
-
-		if (ShouldPausePhysicalReload(
-			Game::instance.initialReloadRemaining,
-			weaponObject->weaponData[0].reloadRemaining,
-			pauseTicks))
-		{
-			Game::instance.pausedReloadAnimIndex = reloadAnimIndex >= 0
-				? static_cast<uint16_t>(reloadAnimIndex)
-				: fpAnimId;
-			Game::instance.pausedReloadAnimFrame = static_cast<uint16_t>(pauseTicks);
-			Game::instance.frozenReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
-			Game::instance.physicalReloadPhase = EPhysicalReloadPhase::PausedAtEject;
-			Game::instance.bMagazineEjected = true;
-			Game::instance.ResetPhysicalReloadBonePinState();
-
-			if (bBeltGripStartedReload)
-			{
-				bBeltGripStartedReload = false;
-				IVR* pauseVr = Game::instance.GetVR();
-				if (pauseVr->GetBoolInput(TwoHandGrip) && IsOffHandNearBeltMagazine())
-				{
-					Game::instance.bMagazineGrabbed = true;
-					bSuppressSwapUntilGripRelease = true;
-				}
-			}
-
-			if (Game::instance.c_LogPhysicalReloadDebug->Value())
-			{
-				const Vector3 beltPos = Game::instance.GetBeltMagazineWorldPosition();
-				Logger::log << "[PhysicalReload] paused at eject pauseTicks=" << pauseTicks
-					<< " beltPos=("
-					<< beltPos.x << "," << beltPos.y << "," << beltPos.z << ")"
-					<< std::endl;
-			}
-			Helpers::PausePhysicalReloadSounds();
-		}
-	}
-	else if (Game::instance.physicalReloadPhase == EPhysicalReloadPhase::PausedAtEject)
-	{
-		ApplyPhysicalReloadAnimPin();
-		Helpers::PausePhysicalReloadSounds();
-	}
-	else if (Game::instance.physicalReloadPhase == EPhysicalReloadPhase::PlayingFinish)
-	{
-		Weapon& weapon = weaponObject->weaponData[0];
-
-		static int finishFrameCounter = 0;
-		if (phaseChanged)
-		{
-			finishFrameCounter = 0;
-		}
-		else
-		{
-			finishFrameCounter++;
-		}
-
-		// The remaining reload now plays over its real duration, so wait for natural completion.
-		// Pausing mid-reload can skip the engine's transition that refills ammo via ReloadEnd, so
-		// trigger it ourselves once the timer is done. The safety timeout is sized to the captured
-		// real remaining (ticks), with a large margin since render frames run >= game ticks.
-		const int safetyFrames = static_cast<int>(Game::instance.frozenReloadRemaining) * 6 + 60;
-		const bool bTimerDone = weapon.reloadRemaining == 0 || weapon.reloadState == 0;
-		const bool bFinishTimedOut = finishFrameCounter >= safetyFrames;
-
-		// When a rest-of-reload recording is playing back, also wait for the visual to finish so the
-		// ammo refill lands as the animation completes (not before). The safety timeout is the cap.
-		const bool bHasReplay = Game::instance.HasPhysicalReloadReplay();
-		const bool bVisualDone = !bHasReplay || Game::instance.IsPhysicalReloadReplayComplete();
-
-		if (weapon.ammo == 0 && ((bTimerDone && bVisualDone) || bFinishTimedOut))
-		{
-			Game::instance.TriggerWeaponReloadEnd();
-		}
-		else if (!Game::instance.bIsReloading)
-		{
-			if (Game::instance.ShouldContinueContinuousReloadSession())
-			{
-				// Return to idle with the next shell on the belt; the player grabs from the pouch
-				// via TryBeginShotgunLoadFromBelt before the next reload animation starts.
-				ResetPhysicalReloadCycle();
-			}
-			else
-			{
-				Game::instance.bShotgunShellSessionUserCancelled = false;
-				EndShotgunShellSession();
-			}
-		}
-	}
-}
-
-void InputHandler::BeginPhysicalReload()
-{
-	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(Game::instance.GetCachedWeaponType());
-	if (settings.ContinuousReload)
-	{
-		Game::instance.bShotgunShellSessionActive = true;
-	}
-
-	BeginChainedShellReload();
-}
-
-void InputHandler::BeginChainedShellReload()
-{
-	if (Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle)
-	{
-		return;
-	}
-
-	Game::instance.bPhysicalReloadFromEmpty = Game::instance.IsLocalMagazineEmpty();
-	Game::instance.bManualPhysicalReloadPending = true;
-	Game::instance.physicalReloadPhase = EPhysicalReloadPhase::PlayingEject;
-	Game::instance.initialReloadRemaining = 0;
-	Helpers::BeginPhysicalReloadSoundCapture();
-	Game::instance.TriggerWeaponReload();
-	Game::instance.bManualPhysicalReloadPending = false;
-
-	if (!Game::instance.bIsReloading)
-	{
-		EndShotgunShellSession();
-		return;
-	}
-
-	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
-	if (!weaponObject)
-	{
-		EndShotgunShellSession();
-		return;
-	}
-
-	Game::instance.initialReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
-}
-
-void InputHandler::ResumePhysicalReloadAnimation()
-{
-	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
-	if (!weaponObject)
-	{
-		ResetPhysicalReloadState();
-		return;
-	}
-
-	// Trigger haptics for the insert
-	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
-	WeaponHapticsConfigManager& hapticsConfig = Game::instance.weaponHapticsConfig;
-	hapticsConfig.LoadConfig();
-	hapticsConfig.HandleWeaponHaptics(Game::instance.GetVR(), offHand, hapticsConfig.physicalReloadInsert);
-
-	// Restore the remaining reload time from the resume tick (skipping the virtual insert segment).
-	// reloadState is left as-is so the reload simply continues from the chamber/finish portion.
-	const int pauseTicks = Game::instance.GetPhysicalReloadPauseTicks();
-	const int resumeTicks = Game::instance.GetPhysicalReloadResumeTicks();
-	const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
-	const float skipSeconds = static_cast<float>(skipTicks) / 30.0f;
-	Game::instance.SetPhysicalReloadReplaySkipSeconds(skipSeconds);
-
-	const uint16_t realRemaining = Game::instance.frozenReloadRemaining;
-	if (realRemaining > 0)
-	{
-		const uint16_t shortenedRemaining = realRemaining > static_cast<uint16_t>(skipTicks)
-			? static_cast<uint16_t>(realRemaining - skipTicks)
-			: 1;
-		weaponObject->weaponData[0].reloadRemaining = shortenedRemaining;
-		Game::instance.frozenReloadRemaining = shortenedRemaining;
-	}
-
-	Helpers::ClearPhysicalReloadSounds();
-
-	Game::instance.physicalReloadPhase = EPhysicalReloadPhase::PlayingFinish;
-	Game::instance.bMagazineGrabbed = false;
-	Game::instance.bMagazineEjected = false;
-	// Stop showing the frozen eject pose only; keep reloadReplayFrames for playback.
-	Game::instance.ClearPhysicalReloadBoneSnapshot();
-
-	if (Game::instance.c_LogPhysicalReloadDebug && Game::instance.c_LogPhysicalReloadDebug->Value())
-	{
-		Logger::log << "[PhysicalReload] resume skipTicks=" << skipTicks
-			<< " replay=" << (Game::instance.HasPhysicalReloadReplay() ? "yes" : "no")
-			<< std::endl;
-	}
-}
-
-void InputHandler::HandlePhysicalMagazineGrabInsert()
-{
-	IVR* vr = Game::instance.GetVR();
-	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
-	Matrix4 offHandTransform = vr->GetControllerTransform(offHand, true);
-	Vector3 offHandPos = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
-	offHandPos *= Game::instance.MetresToWorld(1.0f);
-	offHandPos += Helpers::GetCamera().position;
-
-	const Vector3 beltPos = Game::instance.GetBeltMagazineWorldPosition();
-	const Vector3 socketPos = Game::instance.GetMagazineSocketWorldPosition();
-	const float grabDistance = Game::instance.c_BeltMagazineGrabDistance->Value();
-	const float insertDistance = Game::instance.c_BeltMagazineInsertDistance->Value();
-	const float grabDistanceSqr = grabDistance * grabDistance;
-	const float insertDistanceSqr = insertDistance * insertDistance;
-
-	const bool offHandNearBelt = (offHandPos - beltPos).lengthSqr() < grabDistanceSqr;
-	const bool offHandNearSocket = (offHandPos - socketPos).lengthSqr() < insertDistanceSqr;
-	bool gripChanged = false;
-	const bool gripHeld = vr->GetBoolInput(TwoHandGrip, gripChanged);
-
-	if (!Game::instance.bMagazineGrabbed)
-	{
-		if (gripChanged && gripHeld && offHandNearBelt)
-		{
-			Game::instance.bMagazineGrabbed = true;
-			bSuppressSwapUntilGripRelease = true;
-		}
-	}
-	else if (offHandNearSocket)
-	{
-		ResumePhysicalReloadAnimation();
-	}
-	else if (!gripHeld)
-	{
-		Game::instance.bMagazineGrabbed = false;
-	}
-}
-
-void InputHandler::UpdatePhysicalMagazineReload()
-{
-	if (!Game::instance.c_DisableEmptyMagazineAutoReload->Value()
-		|| Game::instance.bUse3DOFAiming
-		|| !Game::instance.HasMagazineBones())
-	{
-		if (Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle)
-		{
-			ResetPhysicalReloadState();
-		}
-		else
-		{
-			Game::instance.bMagazineEjected = false;
-			Game::instance.bMagazineGrabbed = false;
-		}
-		return;
-	}
-
-	UpdateReloadAnimationPause();
-
-	switch (Game::instance.physicalReloadPhase)
-	{
-	case EPhysicalReloadPhase::Idle:
-	{
-		IVR* vr = Game::instance.GetVR();
-		bool bReloadChanged = false;
-		const bool reloadPressed = vr->GetBoolInput(Reload, bReloadChanged);
-
-		if (reloadPressed && bReloadChanged)
-		{
-			const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(Game::instance.GetCachedWeaponType());
-			if (Game::instance.bShotgunShellSessionActive)
-			{
-				Game::instance.bShotgunShellSessionUserCancelled = true;
-				EndShotgunShellSession();
-			}
-			else if (settings.ContinuousReload)
-			{
-				Game::instance.bShotgunShellSessionUserCancelled = false;
-				BeginPhysicalReload();
-			}
-			else
-			{
-				BeginPhysicalReload();
-			}
-			break;
-		}
-
-		if (Game::instance.ShouldAutoStartContinuousReloadSession())
-		{
-			Game::instance.bShotgunShellSessionActive = true;
-		}
-
-		TryBeginShotgunLoadFromBelt();
-		break;
-	}
-	case EPhysicalReloadPhase::PausedAtEject:
-	{
-		IVR* vr = Game::instance.GetVR();
-		bool bReloadChanged = false;
-		const bool reloadPressed = vr->GetBoolInput(Reload, bReloadChanged);
-
-		if (reloadPressed && bReloadChanged && Game::instance.bShotgunShellSessionActive)
-		{
-			Game::instance.bShotgunShellSessionUserCancelled = true;
-			EndShotgunShellSession();
-			break;
-		}
-
-		HandlePhysicalMagazineGrabInsert();
-		break;
-	}
-	default:
-		break;
-	}
-}
-
 void InputHandler::SetMousePosition(int& x, int& y)
 {
 	Vector2 mousePos = Game::instance.GetVR()->GetMousePos();
@@ -1236,17 +688,7 @@ void InputHandler::CalculateSmoothedInput()
 
 void InputHandler::UpdateHandsProximity()
 {
-	// Once a physical reload uses the off-hand grip, don't allow a weapon-hand swap until that
-	// grip is released - otherwise the still-held insert grip is misread as a swap when the
-	// reload finishes and the magazine flags clear.
-	if (bSuppressSwapUntilGripRelease)
-	{
-		IVR* swapVr = Game::instance.GetVR();
-		if (!swapVr->GetBoolInput(SwapWeaponHand) && !swapVr->GetBoolInput(OffhandSwapWeaponHand))
-		{
-			bSuppressSwapUntilGripRelease = false;
-		}
-	}
+	physicalReload.TickSwapSuppression();
 
 	float swapHandDistance = Game::instance.c_SwapHandDistance->Value();
 	
@@ -1266,20 +708,7 @@ void InputHandler::UpdateHandsProximity()
 
 void InputHandler::CheckSwapWeaponHand()
 {
-	// Suppressed until the magazine-grab/insert grip is released (cleared in UpdateHandsProximity).
-	if (bSuppressSwapUntilGripRelease)
-	{
-		return;
-	}
-
-	// Off-hand grip is shared with magazine grab; don't swap weapon hands during physical reload.
-	// Cover the whole sequence (incl. PlayingFinish after insert) so the still-held grip used to
-	// insert the magazine isn't interpreted as a hand swap once the mag flags are cleared.
-	if (Game::instance.c_DisableEmptyMagazineAutoReload->Value()
-		&& (Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle
-			|| Game::instance.bMagazineEjected
-			|| Game::instance.bMagazineGrabbed
-			|| Game::instance.bIsReloading))
+	if (physicalReload.ShouldSkipWeaponHandSwapDuringReload())
 	{
 		return;
 	}
@@ -1323,7 +752,7 @@ void InputHandler::UpdateTwoHandedHold(float handDistance, bool handsWithinSwapW
 	}
 
 	// Off-hand grip is used to grab the ejected magazine during physical reload.
-	if (ShouldSuppressTwoHandAimForPhysicalReload())
+	if (physicalReload.ShouldSuppressTwoHandAim())
 	{
 		Game::instance.bUseTwoHandAim = false;
 		return;
