@@ -1,16 +1,14 @@
 #include "Sound.h"
 #include "DirectSoundHook.h"
-#include "../Game.h"
 #include "../Hooking/Hooks.h"
 #include "../Logger.h"
-#include "Player.h"
+#include "Objects.h"
 #include <cstring>
 
 namespace
 {
 	constexpr int kSoundEntrySize = 176;
 	constexpr int kMaxSoundSlots = 100;
-	constexpr int kSoundTagIdOffset = 8;
 	constexpr int kSoundOrderIdOffset = 140;
 	constexpr int kSoundParentOffset = 12;
 	constexpr int kSoundScaleOffset = 24;
@@ -62,7 +60,7 @@ namespace
 				if (!loggedNullGlobal)
 				{
 					loggedNullGlobal = true;
-					Logger::log << "[PhysicalReload:Sound] SoundsGlobal.Address is null" << std::endl;
+					Logger::log << "[Sound] SoundsGlobal.Address is null" << std::endl;
 				}
 			}
 			return 0;
@@ -74,7 +72,7 @@ namespace
 			const uint16_t activeCount = *reinterpret_cast<uint16_t*>(manager + 48);
 			if (bDebugLog)
 			{
-				Logger::log << "[PhysicalReload:Sound] " << label
+				Logger::log << "[Sound] " << label
 					<< " manager=0x" << std::hex << manager
 					<< " array=0x" << soundArray
 					<< " active=" << std::dec << activeCount << std::endl;
@@ -88,7 +86,6 @@ namespace
 			return 0;
 		};
 
-		// aLTis: sounds_global = read_dword(0x6C0580) — dereference the global first.
 		const uintptr_t managerPtr = *reinterpret_cast<uintptr_t*>(globalAddress);
 		if (managerPtr)
 		{
@@ -109,7 +106,7 @@ namespace
 			if (!loggedEmptyManager)
 			{
 				loggedEmptyManager = true;
-				Logger::log << "[PhysicalReload:Sound] no active sounds via manager global=0x"
+				Logger::log << "[Sound] no active sounds via manager global=0x"
 					<< std::hex << globalAddress
 					<< " deref=0x" << managerPtr << std::dec << std::endl;
 			}
@@ -143,7 +140,7 @@ namespace
 		}
 	}
 
-	bool IsReloadRelatedSound(uintptr_t entry, const HaloID& playerId, const HaloID& weaponId)
+	bool IsLocalPlayerOrWeaponSound(uintptr_t entry, const HaloID& playerId, const HaloID& weaponId)
 	{
 		if (*reinterpret_cast<int32_t*>(entry + kSoundFirstPersonOffset) != 0)
 		{
@@ -161,7 +158,7 @@ namespace
 		*reinterpret_cast<float*>(entry + kSoundGainOffset) = 0.0f;
 	}
 
-	void ProcessReloadSounds(bool bClearOnly, bool bDebugLog)
+	void ProcessActiveSounds(bool bClearOnly, bool bDebugLog)
 	{
 		if (Helpers::DirectSoundHook::IsActive())
 		{
@@ -179,7 +176,7 @@ namespace
 		{
 			if (bDebugLog)
 			{
-				Logger::log << "[PhysicalReload:Sound] no local player id" << std::endl;
+				Logger::log << "[Sound] no local player id" << std::endl;
 			}
 			return;
 		}
@@ -195,7 +192,7 @@ namespace
 		int matchedCount = 0;
 		ForEachActiveSound(manager, [&](int /*slot*/, uintptr_t entry)
 		{
-			if (IsReloadRelatedSound(entry, playerId, weaponId))
+			if (IsLocalPlayerOrWeaponSound(entry, playerId, weaponId))
 			{
 				matchedCount++;
 			}
@@ -206,7 +203,7 @@ namespace
 
 		ForEachActiveSound(manager, [&](int /*slot*/, uintptr_t entry)
 		{
-			const bool bMatched = IsReloadRelatedSound(entry, playerId, weaponId);
+			const bool bMatched = IsLocalPlayerOrWeaponSound(entry, playerId, weaponId);
 			if (bClearOnly && !bMatched)
 			{
 				return;
@@ -223,7 +220,7 @@ namespace
 
 		if (bDebugLog)
 		{
-			Logger::log << "[PhysicalReload:Sound] retail active=" << activeCount
+			Logger::log << "[Sound] retail active=" << activeCount
 				<< " matched=" << matchedCount
 				<< " stopped=" << stoppedCount
 				<< " stopAllFallback=" << bStopAllDuringPause
@@ -232,41 +229,33 @@ namespace
 	}
 }
 
-void Helpers::BeginPhysicalReloadSoundCapture()
+void Helpers::BeginActiveSoundCapture()
 {
 	Helpers::DirectSoundHook::Init();
 	Helpers::DirectSoundHook::BeginCapture();
 }
 
-void Helpers::PausePhysicalReloadSounds()
+void Helpers::PauseActiveSounds(unsigned int stopDelayMs, bool bDebugLog)
 {
-	const bool bDebugLog = Game::instance.c_LogPhysicalReloadDebug->Value();
-	float stopDelaySeconds = Game::instance.c_PhysicalReloadSoundStopDelay
-		? Game::instance.c_PhysicalReloadSoundStopDelay->Value()
-		: 0.0f;
-	if (stopDelaySeconds < 0.0f)
-	{
-		stopDelaySeconds = 0.0f;
-	}
+	Helpers::DirectSoundHook::SetDebugLogging(bDebugLog);
 	Helpers::DirectSoundHook::Init();
-	Helpers::DirectSoundHook::EnterPause(static_cast<unsigned int>(stopDelaySeconds * 1000.0f));
-	ProcessReloadSounds(false, bDebugLog);
+	Helpers::DirectSoundHook::EnterPause(stopDelayMs);
+	ProcessActiveSounds(false, bDebugLog);
 }
 
-void Helpers::ClearPhysicalReloadSounds()
+void Helpers::ClearActiveSounds(bool bDebugLog)
 {
-	const bool bDebugLog = Game::instance.c_LogPhysicalReloadDebug->Value();
-	// Magazine inserted: replay the reload SFX tail rather than discarding it.
-	Helpers::DirectSoundHook::ResumeReloadSound();
-	ProcessReloadSounds(true, bDebugLog);
+	Helpers::DirectSoundHook::SetDebugLogging(bDebugLog);
+	Helpers::DirectSoundHook::ResumeCaptured();
+	ProcessActiveSounds(true, bDebugLog);
 }
 
-void Helpers::ResumePhysicalReloadSounds(bool bStopActiveSources)
+void Helpers::ResumeActiveSounds(bool bStopActiveSources, bool bDebugLog)
 {
-	const bool bDebugLog = Game::instance.c_LogPhysicalReloadDebug->Value();
+	Helpers::DirectSoundHook::SetDebugLogging(bDebugLog);
 	Helpers::DirectSoundHook::ExitPause(bStopActiveSources);
 	if (bDebugLog && bStopActiveSources)
 	{
-		Logger::log << "[PhysicalReload:Sound] resume requested stopActive=" << bStopActiveSources << std::endl;
+		Logger::log << "[Sound] resume requested stopActive=" << bStopActiveSources << std::endl;
 	}
 }

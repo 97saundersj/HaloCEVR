@@ -1,17 +1,10 @@
 #pragma once
 #include "VR/IVR.h"
-#include "Helpers/PhysicalReload.h"
 #include <chrono>
-
-struct WeaponDynamicObject;
 
 class InputHandler
 {
-	friend class PhysicalReloadController;
-
 public:
-	InputHandler() : physicalReload(*this) {}
-
 	void RegisterInputs();
 	void UpdateRegisteredInputs();
 	void UpdateInputs(bool bInVehicle);
@@ -22,7 +15,11 @@ public:
 	bool GetCalculatedHandPositions(Matrix4& controllerTransform, Vector3& dominantHandPos, Vector3& offHand);
 	void CalculateSmoothedInput();
 
-	PhysicalReloadController physicalReload;
+	InputBindingID GetReloadInput() const { return Reload; }
+	InputBindingID GetTwoHandGripInput() const { return TwoHandGrip; }
+	InputBindingID GetFireInput() const { return Fire; }
+	InputBindingID GetSwapWeaponHandInput() const { return SwapWeaponHand; }
+	InputBindingID GetOffhandSwapWeaponHandInput() const { return OffhandSwapWeaponHand; }
 
 	Vector3 smoothedPosition = Vector3(0.0f, 0.0f, 0.0f);
 
@@ -38,8 +35,6 @@ protected:
 	void UpdateHandsProximity();
 	void CheckSwapWeaponHand();
 	void UpdateTwoHandedHold(float handDistance, bool handsWithinSwapWeaponDistance);
-
-	static WeaponDynamicObject* GetLocalWeaponObject();
 
 	char lastSnapState = 0;
 	unsigned char mouseDownState = 0;

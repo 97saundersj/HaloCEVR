@@ -1,14 +1,16 @@
 #pragma once
-#include "Objects.h"
 
 namespace Helpers
 {
-	// Start capturing the reload sound's DirectSound buffer(s); call just before the reload SFX begins.
-	void BeginPhysicalReloadSoundCapture();
-	// Mute/freeze reload sounds while paused at magazine eject (DirectSound/DSOAL + retail manager fallback).
-	void PausePhysicalReloadSounds();
-	// Resume audio after insert; stops frozen reload sources when using DSOAL.
-	void ClearPhysicalReloadSounds();
-	// Unsuspend DirectSound output when physical reload is cancelled or aborted.
-	void ResumePhysicalReloadSounds(bool bStopActiveSources = false);
+	// Capture DirectSound buffers that start playing after this call.
+	void BeginActiveSoundCapture();
+
+	// Mute/freeze captured (and retail-manager fallback) sounds after stopDelayMs.
+	void PauseActiveSounds(unsigned int stopDelayMs, bool bDebugLog = false);
+
+	// Resume captured buffers from their stopped position, then clear pause state.
+	void ClearActiveSounds(bool bDebugLog = false);
+
+	// Unsuspend output when a capture session is cancelled or aborted.
+	void ResumeActiveSounds(bool bStopActiveSources = false, bool bDebugLog = false);
 }

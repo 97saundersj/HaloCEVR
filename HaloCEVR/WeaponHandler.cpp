@@ -1,13 +1,11 @@
-#include "WeaponHandler.h"
+﻿#include "WeaponHandler.h"
 #include "Helpers/Objects.h"
 #include "Helpers/Camera.h"
 #include "Helpers/Assets.h"
 #include "Helpers/Maths.h"
-#include "Helpers/FirstPersonAnim.h"
 #include "Logger.h"
 #include "Game.h"
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -155,24 +153,6 @@ bool WeaponHandler::HasMagazineBones() const
 	return cachedViewModel.bHasMagazineBones;
 }
 
-bool WeaponHandler::ShouldShowBeltMagazine() const
-{
-	if (!HasMagazineBones() || Game::instance.bUse3DOFAiming)
-	{
-		return false;
-	}
-
-	if (IsShellByShellReloadWeapon()
-		&& Game::instance.bShotgunShellSessionActive
-		&& Game::instance.physicalReloadPhase == EPhysicalReloadPhase::Idle
-		&& CanLoadAnotherShell())
-	{
-		return true;
-	}
-
-	return Game::instance.bMagazineEjected;
-}
-
 int WeaponHandler::GetReloadEmptyAnimIndex() const
 {
 	return cachedViewModel.reloadEmptyAnimIndex;
@@ -193,39 +173,9 @@ int WeaponHandler::GetReloadExitFullAnimIndex() const
 	return cachedViewModel.reloadExitFullAnimIndex;
 }
 
-int WeaponHandler::GetActiveReloadAnimIndex() const
+bool WeaponHandler::IsMagazineBone(int boneIndex) const
 {
-	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType);
-	if (Game::instance.bPhysicalReloadFromEmpty || settings.ContinuousReload)
-	{
-		const int primary = cachedViewModel.reloadEmptyAnimIndex;
-		return primary >= 0 ? primary : cachedViewModel.reloadExitEmptyAnimIndex;
-	}
-
-	const int primary = cachedViewModel.reloadFullAnimIndex;
-	return primary >= 0 ? primary : cachedViewModel.reloadExitFullAnimIndex;
-}
-
-int WeaponHandler::GetActiveReloadExitAnimIndex() const
-{
-	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType);
-	if (Game::instance.bPhysicalReloadFromEmpty || settings.ContinuousReload)
-	{
-		return cachedViewModel.reloadExitEmptyAnimIndex;
-	}
-
-	return cachedViewModel.reloadExitFullAnimIndex;
-}
-
-bool WeaponHandler::ShouldUsePhysicalMagazineReload() const
-{
-	return ShouldShowBeltMagazine()
-		&& Game::instance.c_DisableEmptyMagazineAutoReload->Value();
-}
-
-bool WeaponHandler::SupportsPhysicalMagazineReload() const
-{
-	return HasMagazineBones();
+	return boneIndex >= 0 && boneIndex < 64 && cachedViewModel.magazineHideBones[boneIndex];
 }
 
 bool WeaponHandler::IsShellByShellReloadWeapon() const
@@ -256,7 +206,7 @@ bool WeaponHandler::CanLoadAnotherShell() const
 	return weapon.reserveAmmo > 0 && weapon.ammo < cachedViewModel.magazineCapacity;
 }
 
-int WeaponHandler::ResolveMagazineRootBoneIndex() const
+int WeaponHandler::GetMagazineRootBoneIndex() const
 {
 	if (cachedViewModel.magazineRootBoneIndex >= 0)
 	{
@@ -272,590 +222,6 @@ int WeaponHandler::ResolveMagazineRootBoneIndex() const
 	}
 
 	return -1;
-}
-
-Vector3 WeaponHandler::GetBeltMagazineWorldPosition() const
-{
-	// Anchor to hip height in world units (ShowRoomCentre uses z -= 0.62 for feet).
-	Vector3 beltPos = Helpers::GetCamera().position;
-	beltPos.z -= Game::instance.c_BeltMagazineHipDrop->Value();
-
-	Matrix4 headTransform = Game::instance.GetVR()->GetHMDTransform(true);
-	Vector3 forward = headTransform.getForwardAxis();
-	forward.z = 0.0f;
-	if (forward.lengthSqr() < 0.0001f)
-	{
-		forward = Vector3(1.0f, 0.0f, 0.0f);
-	}
-	else
-	{
-		forward.normalize();
-	}
-
-	const Vector3 worldUp(0.0f, 0.0f, 1.0f);
-	Vector3 left = worldUp.cross(forward);
-	left.normalize();
-
-	const Vector3 offset = Game::instance.c_BeltMagazineOffset->Value();
-	const float scale = Game::instance.MetresToWorld(1.0f);
-	beltPos += forward * (offset.x * scale);
-	beltPos += left * (offset.y * scale);
-
-	return beltPos;
-}
-
-Vector3 WeaponHandler::GetMagazineSocketWorldPosition() const
-{
-	return cachedViewModel.magazineSocketPosition;
-}
-
-Vector3 WeaponHandler::GetOffHandWorldPosition() const
-{
-	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
-	Matrix4 offHandTransform = Game::instance.GetVR()->GetControllerTransform(offHand, true);
-	Vector3 handPos = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
-	handPos *= Game::instance.MetresToWorld(1.0f);
-	handPos += Helpers::GetCamera().position;
-	return handPos;
-}
-
-Vector3 WeaponHandler::GetMagazineGripWorldOffset() const
-{
-	const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
-	Matrix4 offHandTransform = Game::instance.GetVR()->GetControllerTransform(offHand, true);
-	const Vector3 controllerOrigin = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
-
-	Matrix4 handRotation = offHandTransform;
-	handRotation.translate(-controllerOrigin);
-
-	Vector3 worldOffset = handRotation * Game::instance.c_MagazineGripControllerOffset->Value();
-	worldOffset *= Game::instance.MetresToWorld(1.0f);
-	return worldOffset;
-}
-
-void WeaponHandler::CaptureGripFromResumePose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up)
-{
-	if (bHasCapturedGrip || reloadReplayCount <= 0)
-	{
-		return;
-	}
-
-	const int wristIndex = cachedViewModel.leftWristIndex;
-	const int magIndex = ResolveMagazineRootBoneIndex();
-	if (wristIndex < 0 || magIndex < 0)
-	{
-		return;
-	}
-
-	// Find the replay frame that corresponds to the resume tick.
-	// The replay buffer records the live animation during the eject pause; at the resume tick
-	// the hand is holding the fresh magazine before insertion — the correct grip frame.
-	const WeaponManualReloadSettings& settings = Game::instance.weaponManualReloadConfig.GetSettings(
-		Game::instance.GetWeaponHandler().GetCachedWeaponType());
-	const int pauseTicks = settings.PauseTicks;
-	const int resumeTicks = settings.ResumeTicks;
-	const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
-	const float skipSeconds = static_cast<float>(skipTicks) / 30.0f;
-
-	int replayIndex = -1;
-	for (int i = 0; i < reloadReplayCount; i++)
-	{
-		if (reloadReplayTimes[i] >= skipSeconds)
-		{
-			replayIndex = i;
-			break;
-		}
-	}
-
-	if (replayIndex < 0)
-	{
-		return; // Resume frame not yet in the replay buffer; will retry next tick
-	}
-
-	TransformQuat resumeQuats[64]{};
-	memcpy(resumeQuats, reloadReplayFrames[replayIndex], sizeof(resumeQuats));
-
-	// Evaluate in pure animation space (no VR overrides) so the wrist and magazine
-	// positions reflect exactly what the animation intends at this frame.
-	Transform animPoseTransforms[64]{};
-	ReferenceUpdateViewModelImpl(id, pos, facing, up, resumeQuats, animPoseTransforms);
-
-	Matrix4 wristMatrix;
-	Transform wristTransform = animPoseTransforms[wristIndex];
-	TransformToMatrix4(wristTransform, wristMatrix);
-
-	Matrix4 magMatrix;
-	Transform magTransform = animPoseTransforms[magIndex];
-	TransformToMatrix4(magTransform, magMatrix);
-
-	Matrix4 wristInverse = wristMatrix;
-	wristInverse.invertAffine();
-
-	gripFromWristLocal = wristInverse * magMatrix;
-	bHasCapturedGrip = true;
-
-	if (Game::instance.c_LogPhysicalReloadDebug->Value())
-	{
-		const Vector3 t = gripFromWristLocal * Vector3(0.0f, 0.0f, 0.0f);
-		Logger::log << "[PhysicalReload:Grip] captured grip from resume pose"
-			<< " wristBone=" << wristIndex
-			<< " magBone=" << magIndex
-			<< " skipSeconds=" << skipSeconds
-			<< " replayIndex=" << replayIndex
-			<< " localTranslation=(" << t.x << "," << t.y << "," << t.z << ")"
-			<< std::endl;
-	}
-}
-
-bool WeaponHandler::GetGrabbedMagazineTargetMatrix(const Transform* outBoneTransforms, Matrix4& outTargetMatrix) const
-{
-	const int wristIndex = cachedViewModel.leftWristIndex;
-	if (!bHasCapturedGrip || wristIndex < 0 || !outBoneTransforms)
-	{
-		return false;
-	}
-
-	Matrix4 wristMatrix;
-	Transform wristTransform = outBoneTransforms[wristIndex];
-	TransformToMatrix4(wristTransform, wristMatrix);
-
-	outTargetMatrix = wristMatrix * gripFromWristLocal;
-	return true;
-}
-
-void WeaponHandler::RelocateMagazineBones(Transform* outBoneTransforms, const Vector3& targetRootPos, const Matrix4& targetRootOrientation)
-{
-	const int rootIndex = ResolveMagazineRootBoneIndex();
-	if (rootIndex < 0)
-	{
-		return;
-	}
-
-	Matrix4 originalRootMatrix;
-	TransformToMatrix4(outBoneTransforms[rootIndex], originalRootMatrix);
-
-	Matrix4 originalRootInverse = originalRootMatrix;
-	originalRootInverse.invertAffine();
-
-	Matrix4 newRootMatrix = targetRootOrientation;
-	newRootMatrix.setColumn(3, targetRootPos);
-
-	for (int i = 0; i < 64; i++)
-	{
-		if (!cachedViewModel.magazineHideBones[i])
-		{
-			continue;
-		}
-
-		Matrix4 originalBoneMatrix;
-		TransformToMatrix4(outBoneTransforms[i], originalBoneMatrix);
-
-		Matrix4 relativeMatrix = originalRootInverse * originalBoneMatrix;
-		Matrix4 newBoneMatrix = newRootMatrix * relativeMatrix;
-
-		ApplyMatrixToTransform(newBoneMatrix, outBoneTransforms[i]);
-		outBoneTransforms[i].scale = 1.0f;
-	}
-}
-
-Matrix4 WeaponHandler::GetDetachedMagazineOrientation(const Transform* outBoneTransforms) const
-{
-	if (Game::instance.bMagazineGrabbed)
-	{
-		Matrix4 targetMatrix;
-		if (GetGrabbedMagazineTargetMatrix(outBoneTransforms, targetMatrix))
-		{
-			return targetMatrix;
-		}
-
-		const ControllerRole offHand = Game::instance.bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
-		Matrix4 controllerTransform = Game::instance.GetVR()->GetControllerTransform(offHand, true);
-
-		Matrix4 orientation;
-		orientation.identity();
-		for (int x = 0; x < 3; x++)
-		{
-			for (int y = 0; y < 3; y++)
-			{
-				const_cast<float*>(orientation.get())[x + y * 4] = controllerTransform.get()[x + y * 4];
-			}
-		}
-
-		return orientation;
-	}
-
-	// Belt orientation: follow body yaw only so the mag doesn't tilt with gun aim.
-	Matrix4 headTransform = Game::instance.GetVR()->GetHMDTransform(true);
-	Vector3 forward = headTransform.getForwardAxis();
-	forward.z = 0.0f;
-	if (forward.lengthSqr() < 0.0001f)
-	{
-		forward = Vector3(1.0f, 0.0f, 0.0f);
-	}
-	else
-	{
-		forward.normalize();
-	}
-
-	const Vector3 up(0.0f, 0.0f, 1.0f);
-	Transform orientationTransform;
-	Helpers::MakeTransformFromXZ(&forward, &up, &orientationTransform);
-
-	Matrix4 orientation;
-	TransformToMatrix4(orientationTransform, orientation);
-
-	Vector3 left = up.cross(forward);
-	if (left.lengthSqr() > 0.0001f)
-	{
-		left.normalize();
-		orientation.rotate(90.0f, left);
-	}
-
-	return orientation;
-}
-
-void WeaponHandler::UpdatePhysicalMagazinePlacement(const HaloID& id, Transform* outBoneTransforms)
-{
-	const bool bDebug = Game::instance.c_LogPhysicalReloadDebug->Value();
-	static int debugLogCounter = 0;
-
-	if (cachedViewModel.currentAsset != id || cachedViewModel.rightWristIndex < 0)
-	{
-		if (bDebug && Game::instance.bMagazineEjected && debugLogCounter++ % 60 == 0)
-		{
-			Logger::log << "[PhysicalReload:Belt] skip placement assetMismatch"
-				<< " passAsset=" << id
-				<< " cachedAsset=" << cachedViewModel.currentAsset
-				<< " rightWrist=" << cachedViewModel.rightWristIndex
-				<< std::endl;
-		}
-		return;
-	}
-
-	if (!ShouldShowBeltMagazine())
-	{
-		if (bDebug && debugLogCounter++ % 60 == 0
-			&& Game::instance.physicalReloadPhase != EPhysicalReloadPhase::Idle)
-		{
-			Logger::log << "[PhysicalReload:Belt] skip show"
-				<< " hasMagBones=" << HasMagazineBones()
-				<< " b3DOF=" << Game::instance.bUse3DOFAiming
-				<< " bMagEjected=" << Game::instance.bMagazineEjected
-				<< " phase=" << static_cast<int>(Game::instance.physicalReloadPhase)
-				<< std::endl;
-		}
-		return;
-	}
-
-	Vector3 targetPos = GetBeltMagazineWorldPosition();
-	if (Game::instance.bMagazineGrabbed)
-	{
-		Matrix4 targetMatrix;
-		if (GetGrabbedMagazineTargetMatrix(outBoneTransforms, targetMatrix))
-		{
-			targetPos = targetMatrix * Vector3(0.0f, 0.0f, 0.0f);
-		}
-		else
-		{
-			targetPos = GetOffHandWorldPosition() + GetMagazineGripWorldOffset();
-		}
-	}
-
-	const int rootIndex = ResolveMagazineRootBoneIndex();
-	if (rootIndex < 0)
-	{
-		if (bDebug && debugLogCounter++ % 30 == 0)
-		{
-			Logger::log << "[PhysicalReload:Belt] no magazine root bone resolved" << std::endl;
-		}
-		return;
-	}
-
-	int markedBoneCount = 0;
-	for (int i = 0; i < 64; i++)
-	{
-		if (cachedViewModel.magazineHideBones[i])
-		{
-			markedBoneCount++;
-		}
-	}
-
-	RelocateMagazineBones(outBoneTransforms, targetPos, GetDetachedMagazineOrientation(outBoneTransforms));
-
-	if (bDebug)
-	{
-		if (debugLogCounter++ % 30 == 0)
-		{
-			const Vector3 camPos = Helpers::GetCamera().position;
-			Logger::log << "[PhysicalReload:Belt] placed"
-				<< " rootBone=" << rootIndex
-				<< " markedBones=" << markedBoneCount
-				<< " grabbed=" << Game::instance.bMagazineGrabbed
-				<< " target=(" << targetPos.x << "," << targetPos.y << "," << targetPos.z << ")"
-				<< " cam=(" << camPos.x << "," << camPos.y << "," << camPos.z << ")"
-				<< " magScale=" << outBoneTransforms[rootIndex].scale
-				<< std::endl;
-		}
-
-		Vector3 forward = GetDetachedMagazineOrientation(outBoneTransforms).getForwardAxis();
-		forward.z = 0.0f;
-		if (forward.lengthSqr() < 0.0001f)
-		{
-			forward = Vector3(1.0f, 0.0f, 0.0f);
-		}
-		else
-		{
-			forward.normalize();
-		}
-
-		const Vector3 up(0.0f, 0.0f, 1.0f);
-			Game::instance.inGameRenderer.DrawPolygon(
-			targetPos,
-			forward,
-			up,
-			6,
-			Game::instance.MetresToWorld(0.08f),
-			D3DCOLOR_ARGB(200, 255, 140, 0),
-			false);
-	}
-}
-
-void WeaponHandler::ClearPhysicalReloadBoneSnapshot()
-{
-	bHasPausedBoneSnapshot = false;
-}
-
-void WeaponHandler::ResetPhysicalReloadBonePinState()
-{
-	ClearPhysicalReloadBoneSnapshot();
-	reloadReplayCount = 0;
-	reloadRecordComplete = false;
-	reloadRecordTargetSeconds = 0.0f;
-	reloadPauseStartSeconds = -1.0;
-	reloadReplayStartSeconds = -1.0;
-	reloadReplaySkipSeconds = 0.0f;
-	bReloadReplaying = false;
-	bReloadReplayComplete = false;
-	lastBonePinPhase = 0; // EPhysicalReloadPhase::Idle
-	bHasCapturedGrip = false;
-	gripFromWristLocal.identity();
-}
-
-static double GetPhysicalReloadClockSeconds()
-{
-	using namespace std::chrono;
-	return duration<double>(steady_clock::now().time_since_epoch()).count();
-}
-
-// Physical reload bone record/replay.
-// SetViewModelPosition runs once per skeleton pass; we only touch the local weapon asset (gated
-// by currentAsset/rightWristIndex) so non-weapon skeletons are untouched (see skeleton-pipeline.md).
-//
-// PausedAtEject: snapshot the eject pose and keep displaying it, while recording the live clip's
-//   remaining bone stream (it keeps running underneath on the engine's own clock) up to roughly the
-//   real remaining reload duration.
-// PlayingFinish: replay from the resume tick (skipping the virtual insert segment) so only
-//   chamber/finish animates after the player inserts the magazine.
-void WeaponHandler::ClearReloadStartInsertSocket()
-{
-	bHasReloadStartMagSocket = false;
-	reloadStartMagLocalOffset = Vector3(0.0f, 0.0f, 0.0f);
-	bHasCapturedGrip = false;
-	gripFromWristLocal.identity();
-}
-
-
-
-void WeaponHandler::SetReloadReplaySkipSeconds(float skipSeconds)
-{
-	reloadReplaySkipSeconds = std::max(0.0f, skipSeconds);
-}
-
-void WeaponHandler::CaptureReloadStartInsertSocket(const Transform* outBoneTransforms)
-{
-	if (bHasReloadStartMagSocket)
-	{
-		return;
-	}
-
-	const int gunIndex = cachedViewModel.gunIndex;
-	const int magIndex = ResolveMagazineRootBoneIndex();
-	if (gunIndex < 0 || magIndex < 0)
-	{
-		return;
-	}
-
-	Matrix4 gunMatrix;
-	Transform gunTransform = outBoneTransforms[gunIndex];
-	TransformToMatrix4(gunTransform, gunMatrix);
-
-	Matrix4 gunInverse = gunMatrix;
-	gunInverse.invertAffine();
-
-	reloadStartMagLocalOffset = gunInverse * outBoneTransforms[magIndex].translation;
-	bHasReloadStartMagSocket = true;
-
-	if (Game::instance.c_LogPhysicalReloadDebug->Value())
-	{
-		Logger::log << "[PhysicalReload:Insert] captured mag-well offset from reload start"
-			<< " gunBone=" << gunIndex
-			<< " magBone=" << magIndex
-			<< " localOffset=("
-			<< reloadStartMagLocalOffset.x << ","
-			<< reloadStartMagLocalOffset.y << ","
-			<< reloadStartMagLocalOffset.z << ")"
-			<< std::endl;
-	}
-}
-
-void WeaponHandler::UpdateInsertSocketFromGun(const Transform* outBoneTransforms)
-{
-	if (!bHasReloadStartMagSocket)
-	{
-		return;
-	}
-
-	const int gunIndex = cachedViewModel.gunIndex;
-	if (gunIndex < 0)
-	{
-		return;
-	}
-
-	Matrix4 gunMatrix;
-	Transform gunTransform = outBoneTransforms[gunIndex];
-	TransformToMatrix4(gunTransform, gunMatrix);
-	cachedViewModel.magazineSocketPosition = gunMatrix * reloadStartMagLocalOffset;
-
-	if (Game::instance.c_LogPhysicalReloadDebug->Value())
-	{
-		static int debugLogCounter = 0;
-		if (debugLogCounter++ % 30 == 0)
-		{
-			Logger::log << "[PhysicalReload:Insert] socket from reload-start mag-well"
-				<< " pos=("
-				<< cachedViewModel.magazineSocketPosition.x << ","
-				<< cachedViewModel.magazineSocketPosition.y << ","
-				<< cachedViewModel.magazineSocketPosition.z << ")"
-				<< std::endl;
-		}
-
-		const Vector3 up(0.0f, 0.0f, 1.0f);
-		Game::instance.inGameRenderer.DrawPolygon(
-			cachedViewModel.magazineSocketPosition,
-			Vector3(1.0f, 0.0f, 0.0f),
-			up,
-			6,
-			Game::instance.MetresToWorld(0.05f),
-			D3DCOLOR_ARGB(200, 0, 180, 255),
-			false);
-	}
-}
-
-void WeaponHandler::ApplyPhysicalReloadBonePin(const HaloID& id, TransformQuat* boneTransforms)
-{
-	if (cachedViewModel.currentAsset != id || cachedViewModel.rightWristIndex < 0)
-	{
-		return;
-	}
-
-	const int phase = static_cast<int>(Game::instance.physicalReloadPhase);
-	const int kPausedAtEject = static_cast<int>(EPhysicalReloadPhase::PausedAtEject);
-	const int kPlayingFinish = static_cast<int>(EPhysicalReloadPhase::PlayingFinish);
-	const double now = GetPhysicalReloadClockSeconds();
-
-	if (phase == kPausedAtEject)
-	{
-		if (!bHasPausedBoneSnapshot)
-		{
-			// First eject frame: this pose is the eject point. Snapshot it for the frozen display
-			// and seed the recording with it as frame 0 (t = 0).
-			memcpy(pausedBoneTransforms, boneTransforms, sizeof(pausedBoneTransforms));
-			bHasPausedBoneSnapshot = true;
-
-			memcpy(reloadReplayFrames[0], boneTransforms, sizeof(reloadReplayFrames[0]));
-			reloadReplayTimes[0] = 0.0f;
-			reloadReplayCount = 1;
-			reloadRecordComplete = false;
-			reloadPauseStartSeconds = now;
-
-			// Capture roughly the real remaining reload time so playback matches the engine's
-			// reload timer during PlayingFinish (30 ticks/sec), with a small tail margin.
-			const float remainingTicks = static_cast<float>(Game::instance.frozenReloadRemaining);
-			reloadRecordTargetSeconds = std::min(4.0f, std::max(0.5f, remainingTicks / 30.0f + 0.15f));
-		}
-		else
-		{
-			// Keep recording the live clip until we've captured the rest of the reload.
-			if (!reloadRecordComplete)
-			{
-				const float elapsed = static_cast<float>(now - reloadPauseStartSeconds);
-				const float lastSampleTime = reloadReplayTimes[reloadReplayCount - 1];
-				// Throttle to ~130 Hz so the fixed buffer always spans the target duration.
-				const bool spacedEnough = (elapsed - lastSampleTime) >= (1.0f / 130.0f);
-
-				if (reloadReplayCount >= kMaxReloadReplayFrames || elapsed >= reloadRecordTargetSeconds)
-				{
-					reloadRecordComplete = true;
-				}
-				else if (spacedEnough)
-				{
-					memcpy(reloadReplayFrames[reloadReplayCount], boneTransforms, sizeof(reloadReplayFrames[0]));
-					reloadReplayTimes[reloadReplayCount] = elapsed;
-					reloadReplayCount++;
-				}
-			}
-
-			// Always display the frozen eject pose during the hold.
-			memcpy(boneTransforms, pausedBoneTransforms, sizeof(pausedBoneTransforms));
-		}
-	}
-	else if (phase == kPlayingFinish)
-	{
-		// Initialise playback on entry to PlayingFinish.
-		if (lastBonePinPhase != kPlayingFinish)
-		{
-			reloadReplayStartSeconds = now - reloadReplaySkipSeconds;
-			bReloadReplayComplete = false;
-
-			const float lastTime = reloadReplayCount > 0
-				? reloadReplayTimes[reloadReplayCount - 1]
-				: 0.0f;
-			bReloadReplaying = reloadReplayCount > 1 && reloadReplaySkipSeconds < lastTime;
-			if (reloadReplayCount > 1 && reloadReplaySkipSeconds >= lastTime)
-			{
-				bReloadReplayComplete = true;
-			}
-		}
-
-		if (bReloadReplaying)
-		{
-			const float t = static_cast<float>(now - reloadReplayStartSeconds);
-			const float lastTime = reloadReplayTimes[reloadReplayCount - 1];
-
-			if (t >= lastTime)
-			{
-				memcpy(boneTransforms, reloadReplayFrames[reloadReplayCount - 1], sizeof(reloadReplayFrames[0]));
-				bReloadReplaying = false;
-				bReloadReplayComplete = true;
-			}
-			else
-			{
-				// Find the recorded frame nearest the elapsed playback time.
-				int idx = reloadReplayCount - 1;
-				for (int i = 1; i < reloadReplayCount; i++)
-				{
-					if (reloadReplayTimes[i] >= t)
-					{
-						idx = i;
-						break;
-					}
-				}
-				memcpy(boneTransforms, reloadReplayFrames[idx], sizeof(reloadReplayFrames[0]));
-			}
-		}
-	}
-
-	lastBonePinPhase = phase;
 }
 
 void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, TransformQuat* boneTransforms, Transform* outBoneTransforms)
@@ -990,10 +356,9 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 	if (bShouldUpdateCache)
 	{
 		UpdateCache(id, animationData);
-		Game::instance.GetPhysicalReload().ResetState();
 	}
 
-	ApplyPhysicalReloadBonePin(id, boneTransforms);
+	Game::instance.GetPhysicalReload().PreSkeleton(id, boneTransforms);
 
 	Transform unmodifiedHandTransform;
 	CalculateBoneTransform(cachedViewModel.rightWristIndex, boneArray, root, boneTransforms, unmodifiedHandTransform);
@@ -1230,18 +595,7 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 		} while (i != lastIndex);
 	}
 
-	const EPhysicalReloadPhase reloadPhase = Game::instance.physicalReloadPhase;
-	if (reloadPhase == EPhysicalReloadPhase::PlayingEject)
-	{
-		CaptureReloadStartInsertSocket(outBoneTransforms);
-	}
-	else if (reloadPhase == EPhysicalReloadPhase::PausedAtEject)
-	{
-		UpdateInsertSocketFromGun(outBoneTransforms);
-		CaptureGripFromResumePose(id, pos, facing, up);
-	}
-
-	UpdatePhysicalMagazinePlacement(id, outBoneTransforms);
+	Game::instance.GetPhysicalReload().PostSkeleton(id, pos, facing, up, outBoneTransforms);
 }
 
 inline void WeaponHandler::CalculateBoneTransform(int boneIndex, Bone* boneArray, Transform& root, TransformQuat* boneTransforms, Transform& outTransform) const
@@ -1414,8 +768,7 @@ void WeaponHandler::LogViewModelBoneHierarchy(AssetData_ModelAnimations* animati
 
 void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animationData)
 {
-	Game::instance.bShotgunShellSessionUserCancelled = false;
-	Game::instance.GetPhysicalReload().EndShotgunShellSession();
+	Game::instance.GetPhysicalReload().OnWeaponChanged();
 
 	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0 || animationData->NumBones > 256)
 	{
@@ -1755,9 +1108,6 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 			break;
 		}
 	}
-
-	bHasCapturedGrip = false;
-	gripFromWristLocal.identity();
 }
 
 inline WeaponType WeaponHandler::GetWeaponType(Asset_Weapon* weapon) const
@@ -1827,18 +1177,6 @@ inline void WeaponHandler::TransformToMatrix4(Transform& inTransform, Matrix4& o
 		}
 	}
 	outMatrix.setColumn(3, inTransform.translation);
-}
-
-inline void WeaponHandler::ApplyMatrixToTransform(const Matrix4& matrix, Transform& outTransform) const
-{
-	outTransform.translation = matrix * Vector3(0.0f, 0.0f, 0.0f);
-	for (int x = 0; x < 3; x++)
-	{
-		for (int y = 0; y < 3; y++)
-		{
-			outTransform.rotation[x + y * 3] = matrix.get()[x + y * 4];
-		}
-	}
 }
 
 Vector3 WeaponHandler::GetScopeLocation(WeaponType type) const

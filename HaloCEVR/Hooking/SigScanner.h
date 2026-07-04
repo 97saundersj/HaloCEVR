@@ -66,10 +66,6 @@ public:
 	OFFSET(DrawLoadingScreen2,    0x097410, "?? ?? ?? ?? ?? 81 ec 18 04 00 00 57 33 ff 3b c7 0f 84 ?? ?? ?? ?? a1 ?? ?? ?? ?? 56 83 ce ff");
 	OFFSET(DrawCinematicBars,     0x0499c0, "8b 15 ?? ?? ?? ?? 8a 4a 08 83 ec 34 84 c9 53 55 56 57");
 	OFFSET(DrawViewModel,	      0x0924b0, "66 8b 0d ?? ?? ?? ?? 81 ec 3c 0d 00 00 66 83 f9 ff 53 55 56 57");
-
-	// Absolute address resolved at init from DrawViewModel's mov cx, [global] (not module-relative).
-	long long FirstPersonAnimBase = 0;
-
 	OFFSET(SetViewModelPosition,  0x0d6880, "81 ec f0 00 00 00 53 55 25 ff ff 00 00 56 8b f1 8b 0d");
 	OFFSET(HandleInputs,          0x08b4b0, "83 ec 08 56 57 8d 44 24 08 50 ff 15 ?? ?? ?? ?? 8b 4c 24 0c");
 	OFFSET(UpdatePitchYaw,        0x072160, "81 ec a4 00 00 00 8b 15 ?? ?? ?? ?? 53 0f bf c8");

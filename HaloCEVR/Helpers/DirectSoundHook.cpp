@@ -1,5 +1,4 @@
 #include "DirectSoundHook.h"
-#include "../Game.h"
 #include "../Logger.h"
 #include "../Hooking/Hook.h"
 #define WIN32_LEAN_AND_MEAN
@@ -59,7 +58,8 @@ namespace
 	bool g_captureReloadBuffers = false;
 	bool g_suppressReloadBuffers = false;
 	bool g_inPause = false;
-	// Defer the actual stop so the start of the reload SFX is still heard before it cuts out.
+	bool g_debugLogging = false;
+	// Defer the actual stop so the start of the captured SFX is still heard before it cuts out.
 	bool g_reloadStopped = false;
 	ULONGLONG g_pauseStartTick = 0;
 	unsigned int g_stopDelayMs = 0;
@@ -352,12 +352,12 @@ namespace
 
 	void LogInitStatus(bool bSuccess, const char* detail)
 	{
-		if (!Game::instance.c_LogPhysicalReloadDebug || !Game::instance.c_LogPhysicalReloadDebug->Value())
+		if (!g_debugLogging)
 		{
 			return;
 		}
 
-		Logger::log << "[PhysicalReload:Sound] DirectSound hook "
+		Logger::log << "[DirectSoundHook] "
 			<< (bSuccess ? "installed" : "failed")
 			<< " (" << detail << ")" << std::endl;
 	}
@@ -384,9 +384,9 @@ void Helpers::DirectSoundHook::Init()
 	g_initAttempted = true;
 
 	const HMODULE dsoalDriver = GetModuleHandleA("dsoal-aldrv.dll");
-	if (Game::instance.c_LogPhysicalReloadDebug && Game::instance.c_LogPhysicalReloadDebug->Value())
+	if (g_debugLogging)
 	{
-		Logger::log << "[PhysicalReload:Sound] dsound.dll=0x" << std::hex << dsoundModule
+		Logger::log << "[DirectSoundHook] dsound.dll=0x" << std::hex << dsoundModule
 			<< " dsoal-aldrv.dll=0x" << dsoalDriver << std::dec << std::endl;
 	}
 
@@ -429,6 +429,11 @@ bool Helpers::DirectSoundHook::IsActive()
 	return g_hooksInstalled;
 }
 
+void Helpers::DirectSoundHook::SetDebugLogging(bool enabled)
+{
+	g_debugLogging = enabled;
+}
+
 void Helpers::DirectSoundHook::BeginCapture()
 {
 	std::lock_guard<std::mutex> lock(g_mutex);
@@ -444,7 +449,7 @@ void Helpers::DirectSoundHook::EnterPause(unsigned int stopDelayMs)
 
 	if (!g_inPause)
 	{
-		// On entry: block reload-SFX re-triggers immediately, but let the buffer(s) that are
+		// On entry: block captured-buffer re-triggers immediately, but let buffers that are
 		// already playing keep going until the delay elapses so the start of the sound is heard.
 		g_inPause = true;
 		g_suppressReloadBuffers = true;
@@ -466,7 +471,7 @@ void Helpers::DirectSoundHook::EnterPause(unsigned int stopDelayMs)
 	g_reloadStopped = true;
 	const int stoppedCount = StopReloadBuffers();
 
-	if (Game::instance.c_LogPhysicalReloadDebug && Game::instance.c_LogPhysicalReloadDebug->Value())
+	if (g_debugLogging)
 	{
 		size_t reloadCount = 0;
 		{
@@ -474,8 +479,8 @@ void Helpers::DirectSoundHook::EnterPause(unsigned int stopDelayMs)
 			reloadCount = g_reloadBuffers.size();
 		}
 
-		Logger::log << "[PhysicalReload:Sound] DSOAL pause stoppedBuffers="
-			<< stoppedCount << " reloadBuffers=" << reloadCount
+		Logger::log << "[DirectSoundHook] pause stoppedBuffers="
+			<< stoppedCount << " capturedBuffers=" << reloadCount
 			<< " delayMs=" << g_stopDelayMs << std::endl;
 	}
 }
@@ -500,13 +505,13 @@ void Helpers::DirectSoundHook::ExitPause(bool bStopActive)
 		g_reloadBuffers.clear();
 	}
 
-	if (bStopActive && Game::instance.c_LogPhysicalReloadDebug && Game::instance.c_LogPhysicalReloadDebug->Value())
+	if (bStopActive && g_debugLogging)
 	{
-		Logger::log << "[PhysicalReload:Sound] DSOAL resume stoppedBuffers=" << stoppedCount << std::endl;
+		Logger::log << "[DirectSoundHook] resume stoppedBuffers=" << stoppedCount << std::endl;
 	}
 }
 
-void Helpers::DirectSoundHook::ResumeReloadSound()
+void Helpers::DirectSoundHook::ResumeCaptured()
 {
 	int resumedCount = 0;
 
@@ -514,9 +519,9 @@ void Helpers::DirectSoundHook::ResumeReloadSound()
 		std::lock_guard<std::mutex> lock(g_mutex);
 
 		// DirectSound keeps each buffer's play position after Stop, so calling Play again here
-		// continues the reload sound from where it was cut off (the slide/chamber tail) instead
-		// of restarting it. Buffers still playing (insert before the stop delay elapsed) are left
-		// untouched so they finish naturally. Use the original Play to bypass our hook entirely.
+		// continues the sound from where it was cut off instead of restarting it. Buffers still
+		// playing (resume before the stop delay elapsed) are left untouched so they finish
+		// naturally. Use the original Play to bypass our hook entirely.
 		if (g_origBufferPlay)
 		{
 			for (IDirectSoundBuffer* buffer : g_reloadBuffers)
@@ -549,8 +554,8 @@ void Helpers::DirectSoundHook::ResumeReloadSound()
 	g_pauseStartTick = 0;
 	g_stopDelayMs = 0;
 
-	if (Game::instance.c_LogPhysicalReloadDebug && Game::instance.c_LogPhysicalReloadDebug->Value())
+	if (g_debugLogging)
 	{
-		Logger::log << "[PhysicalReload:Sound] DSOAL resume reload sound resumedBuffers=" << resumedCount << std::endl;
+		Logger::log << "[DirectSoundHook] resume captured resumedBuffers=" << resumedCount << std::endl;
 	}
 }

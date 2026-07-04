@@ -8,6 +8,9 @@ namespace Helpers
 	constexpr int FirstPersonAnimBaseAnimIdOffset = 0x1E;
 	constexpr int FirstPersonAnimBaseAnimFrameOffset = 0x20;
 
+	// Resolve the FP anim global from a DrawViewModel instruction address.
+	void InitFirstPersonAnimBase(uintptr_t drawViewModelAddress);
+
 	uintptr_t GetFirstPersonAnimBase();
 	bool HasFirstPersonAnimBase();
 

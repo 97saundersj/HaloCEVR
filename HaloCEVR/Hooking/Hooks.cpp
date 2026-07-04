@@ -43,7 +43,17 @@ void Hooks::InitHooks()
 	RESOLVEINDIRECT(CutsceneData);
 	RESOLVEINDIRECT(CampaignLoading);
 
-	ResolveFirstPersonAnimBase();
+	{
+		Offset drawViewModel = o.DrawViewModel;
+		if (SigScanner::UpdateOffset(drawViewModel, false) >= 0)
+		{
+			Helpers::InitFirstPersonAnimBase(static_cast<uintptr_t>(drawViewModel.Address));
+		}
+		else
+		{
+			Logger::err << "[Hook] Failed to resolve DrawViewModel for FirstPersonAnimBase" << std::endl;
+		}
+	}
 
 	CREATEHOOK(InitDirectX);
 	CREATEHOOK(DrawFrame);
@@ -317,31 +327,6 @@ void Hooks::ResolveIndirect(Offset& offset, long long& Address)
 	void* pointer = *reinterpret_cast<void**>(offset.Address + Address);
 	Address = reinterpret_cast<long long>(pointer);
 	Logger::log << "[Hook] Calculated indirect address: 0x" << std::hex << Address << std::dec << std::endl;
-}
-
-void Hooks::ResolveFirstPersonAnimBase()
-{
-	Offset drawViewModel = o.DrawViewModel;
-	if (SigScanner::UpdateOffset(drawViewModel, false) < 0)
-	{
-		Logger::err << "[Hook] Failed to resolve DrawViewModel for FirstPersonAnimBase" << std::endl;
-		return;
-	}
-
-	const uint8_t* instr = reinterpret_cast<uint8_t*>(drawViewModel.Address);
-	for (int offset = 0; offset < 48; offset++)
-	{
-		if (instr[offset] == 0x66 && instr[offset + 1] == 0x8B && instr[offset + 2] == 0x0D)
-		{
-			const uint32_t baseAnimIdAddress = *reinterpret_cast<const uint32_t*>(instr + offset + 3);
-			o.FirstPersonAnimBase = static_cast<long long>(baseAnimIdAddress - Helpers::FirstPersonAnimBaseAnimIdOffset);
-			Logger::log << "[Hook] FirstPersonAnimBase: 0x" << std::hex << o.FirstPersonAnimBase
-				<< " (DrawViewModel+" << std::dec << offset << ")" << std::endl;
-			return;
-		}
-	}
-
-	Logger::err << "[Hook] DrawViewModel does not contain expected mov cx, [global] for FirstPersonAnimBase" << std::endl;
 }
 
 //===============================//Hooks//===================================//
@@ -654,7 +639,7 @@ void __declspec(naked) Hooks::H_SetViewModelPosition()
 
 void Hooks::H_HandleInputs()
 {
-	Game::instance.GetPhysicalReload().PrepareShotgunFireDuringReload();
+	Game::instance.GetPhysicalReload().OnPreHandleInputs();
 
 	HandleInputs.Original();
 

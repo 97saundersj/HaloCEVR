@@ -11,6 +11,7 @@
 #include "Maths/Vectors.h"
 #include "WeaponHandler.h"
 #include "InputHandler.h"
+#include "Helpers/PhysicalReload.h"
 #include "InGameRenderer.h"
 #include "WeaponHapticsConfig.h"
 #include "WeaponManualReloadConfig.h"
@@ -24,6 +25,8 @@ class Game
 {
 public:
 	static Game instance;
+
+	Game();
 
 	void Init();
 	void Shutdown();
@@ -86,8 +89,8 @@ public:
 
 	inline IVR* GetVR() const { return vr; }
 
-	PhysicalReloadController& GetPhysicalReload() { return inputHandler.physicalReload; }
-	const PhysicalReloadController& GetPhysicalReload() const { return inputHandler.physicalReload; }
+	PhysicalReloadController& GetPhysicalReload() { return physicalReload; }
+	const PhysicalReloadController& GetPhysicalReload() const { return physicalReload; }
 
 	WeaponHandler& GetWeaponHandler() { return weaponHandler; }
 	const WeaponHandler& GetWeaponHandler() const { return weaponHandler; }
@@ -107,17 +110,6 @@ public:
 	Config config;
 	bool bIsFiring = false;
 	bool bIsReloading = false;
-	bool bMagazineEjected = false;  // True when reload animation reached the eject pause point
-	bool bMagazineGrabbed = false;  // True when player is holding the ejected mag
-	bool bManualPhysicalReloadPending = false;
-	bool bPhysicalReloadFromEmpty = false;
-	bool bShotgunShellSessionActive = false;
-	bool bShotgunShellSessionUserCancelled = false;
-	EPhysicalReloadPhase physicalReloadPhase = EPhysicalReloadPhase::Idle;
-	uint16_t pausedReloadAnimIndex = 0;
-	uint16_t pausedReloadAnimFrame = 0;
-	uint16_t frozenReloadRemaining = 0;
-	uint16_t initialReloadRemaining = 0;
 
 	InGameRenderer inGameRenderer;
 	InGameRenderer scopeRenderer;
@@ -163,6 +155,7 @@ protected:
 
 	WeaponHandler weaponHandler;
 	InputHandler inputHandler;
+	PhysicalReloadController physicalReload;
 
 	struct FPSTracker
 	{

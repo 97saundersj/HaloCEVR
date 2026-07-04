@@ -21,7 +21,6 @@ public:
 	static bool Freeze();
 	static void Unfreeze();
 	static void ResolveIndirect(struct Offset& offset, long long& Address);
-	static void ResolveFirstPersonAnimBase();
 
 	// All Hooks go here:
 	DEFINE_HOOK_FULL(InitDirectX, bool);

@@ -4,10 +4,6 @@
 #include "Helpers/Camera.h"
 #include "Helpers/Menus.h"
 #include "Helpers/Maths.h"
-#include "Helpers/Objects.h"
-#include "Logger.h"
-
-
 #define RegisterBoolInput(set, x) x = vr->RegisterBoolInput(set, #x);
 #define RegisterVector2Input(set, x) x = vr->RegisterVector2Input(set, #x);
 #define ApplyBoolInput(x) controls.##x = vr->GetBoolInput(x) ? 127 : 0;
@@ -93,7 +89,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
-		physicalReload.SuppressVanillaReloadControl(controls.Reload);
+		Game::instance.GetPhysicalReload().SuppressVanillaReloadControl(controls.Reload);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
@@ -113,7 +109,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
-		physicalReload.SuppressVanillaReloadControl(controls.Reload);
+		Game::instance.GetPhysicalReload().SuppressVanillaReloadControl(controls.Reload);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
@@ -251,7 +247,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		SendInput(1, &input, sizeof(INPUT));
 	}
 
-	physicalReload.Update();
+	Game::instance.GetPhysicalReload().Update();
 
 	UpdateHandsProximity();
 
@@ -504,16 +500,6 @@ unsigned char InputHandler::UpdateCrouch()
 	return 0;
 }
 
-WeaponDynamicObject* InputHandler::GetLocalWeaponObject()
-{
-	BaseDynamicObject* player = Helpers::GetLocalPlayer();
-	if (!player || player->weapon.id == 0xffff)
-	{
-		return nullptr;
-	}
-
-	return static_cast<WeaponDynamicObject*>(Helpers::GetDynamicObject(player->weapon));
-}
 void InputHandler::SetMousePosition(int& x, int& y)
 {
 	Vector2 mousePos = Game::instance.GetVR()->GetMousePos();
@@ -638,7 +624,7 @@ void InputHandler::CalculateSmoothedInput()
 
 void InputHandler::UpdateHandsProximity()
 {
-	physicalReload.TickSwapSuppression();
+	Game::instance.GetPhysicalReload().TickSwapSuppression();
 
 	float swapHandDistance = Game::instance.c_SwapHandDistance->Value();
 	
@@ -658,7 +644,7 @@ void InputHandler::UpdateHandsProximity()
 
 void InputHandler::CheckSwapWeaponHand()
 {
-	if (physicalReload.ShouldSkipWeaponHandSwapDuringReload())
+	if (Game::instance.GetPhysicalReload().ShouldSkipWeaponHandSwap())
 	{
 		return;
 	}
@@ -702,7 +688,7 @@ void InputHandler::UpdateTwoHandedHold(float handDistance, bool handsWithinSwapW
 	}
 
 	// Off-hand grip is used to grab the ejected magazine during physical reload.
-	if (physicalReload.ShouldSuppressTwoHandAim())
+	if (Game::instance.GetPhysicalReload().ShouldSuppressTwoHandAim())
 	{
 		Game::instance.bUseTwoHandAim = false;
 		return;
