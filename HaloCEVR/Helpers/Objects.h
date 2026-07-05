@@ -15,12 +15,12 @@ inline std::ostream& operator<<(std::ostream& os, const HaloID& id)
 	return os;
 }
 
-inline bool operator==(const HaloID& a, const HaloID& b)
+inline bool operator==(HaloID& a, HaloID& b)
 {
 	return a.id == b.id && a.index == b.index;
 }
 
-inline bool operator!=(const HaloID& a, const HaloID& b)
+inline bool operator!=(HaloID& a, HaloID& b)
 {
 	return a.id != b.id || a.index != b.index;
 }

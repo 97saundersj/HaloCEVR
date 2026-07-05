@@ -234,6 +234,7 @@
     <ClCompile Include="Helpers\CmdLineArgs.cpp" />
     <ClCompile Include="Helpers\Cutscene.cpp" />
     <ClCompile Include="Helpers\FirstPersonAnim.cpp" />
+    <ClCompile Include="Helpers\SkeletonAnim.cpp" />
     <ClCompile Include="Helpers\ManualReload.cpp" />
     <ClCompile Include="Helpers\DirectSoundHook.cpp" />
     <ClCompile Include="Helpers\Sound.cpp" />
@@ -302,6 +303,7 @@
     <ClInclude Include="DirectXWrappers\IDirect3DDevice9ExWrapper.h" />
     <ClInclude Include="InputHandler.h" />
     <ClInclude Include="Helpers\ManualReload.h" />
+    <ClInclude Include="Helpers\SkeletonAnim.h" />
     <ClInclude Include="Logger.h" />
     <ClInclude Include="Maths\Matrices.h" />
     <ClInclude Include="Profiler.h" />

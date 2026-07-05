@@ -2,6 +2,7 @@
 #include "../InputHandler.h"
 #include "../Game.h"
 #include "Camera.h"
+#include "SkeletonAnim.h"
 #include "FirstPersonAnim.h"
 #include "Objects.h"
 #include "Assets.h"
@@ -57,86 +58,6 @@ double GetClockSeconds()
 {
 	using namespace std::chrono;
 	return duration<double>(steady_clock::now().time_since_epoch()).count();
-}
-
-void TransformToMatrix4(const Transform& inTransform, Matrix4& outMatrix)
-{
-	for (int x = 0; x < 3; x++)
-	{
-		for (int y = 0; y < 3; y++)
-		{
-			const_cast<float*>(outMatrix.get())[x + y * 4] = inTransform.rotation[x + y * 3];
-		}
-	}
-	outMatrix.setColumn(3, inTransform.translation);
-}
-
-void ApplyMatrixToTransform(const Matrix4& matrix, Transform& outTransform)
-{
-	outTransform.translation = matrix * Vector3(0.0f, 0.0f, 0.0f);
-	for (int x = 0; x < 3; x++)
-	{
-		for (int y = 0; y < 3; y++)
-		{
-			outTransform.rotation[x + y * 3] = matrix.get()[x + y * 4];
-		}
-	}
-}
-
-// Pure animation-space skeleton evaluation (no VR overrides).
-void EvaluateAnimPose(
-	HaloID& id,
-	Vector3* pos,
-	Vector3* facing,
-	Vector3* up,
-	TransformQuat* boneTransforms,
-	Transform* outBoneTransforms)
-{
-	Asset_ModelAnimations* viewModel = Helpers::GetTypedAsset<Asset_ModelAnimations>(id);
-	if (!viewModel || !viewModel->Data)
-	{
-		return;
-	}
-
-	AssetData_ModelAnimations* animationData = viewModel->Data;
-	Bone* boneArray = animationData->BoneArray;
-
-	Transform root;
-	Helpers::MakeTransformFromXZ(up, facing, &root);
-	root.translation = *pos;
-
-	if (animationData->NumBones <= 0)
-	{
-		return;
-	}
-
-	int i = 0;
-	int lastIndex = 1;
-	int16_t bonesToProcess[64]{};
-	bonesToProcess[0] = 0;
-
-	do
-	{
-		const int16_t boneIdx = bonesToProcess[i];
-		i++;
-		const Bone& currentBone = boneArray[boneIdx];
-		const Transform* parentTransform = boneIdx == 0 ? &root : &outBoneTransforms[currentBone.Parent];
-		const TransformQuat* currentQuat = &boneTransforms[boneIdx];
-		Transform tempTransform;
-		Helpers::MakeTransformFromQuat(&currentQuat->rotation, &tempTransform);
-		tempTransform.scale = currentQuat->scale;
-		tempTransform.translation = currentQuat->translation;
-		Helpers::CombineTransforms(parentTransform, &tempTransform, &outBoneTransforms[boneIdx]);
-
-		if (currentBone.LeftLeaf != -1)
-		{
-			bonesToProcess[lastIndex++] = currentBone.LeftLeaf;
-		}
-		if (currentBone.RightLeaf != -1)
-		{
-			bonesToProcess[lastIndex++] = currentBone.RightLeaf;
-		}
-	} while (i != lastIndex);
 }
 
 bool IsDebugLogging()
@@ -211,20 +132,12 @@ bool ManualReloadController::ShouldBlockAutoReloadStart() const
 
 void ManualReloadController::ClearBoneSnapshot()
 {
-	bHasPausedBoneSnapshot = false;
+	boneReplay.ClearSnapshot();
 }
 
 void ManualReloadController::ResetBonePinState()
 {
-	ClearBoneSnapshot();
-	reloadReplayCount = 0;
-	reloadRecordComplete = false;
-	reloadRecordTargetSeconds = 0.0f;
-	reloadPauseStartSeconds = -1.0;
-	reloadReplayStartSeconds = -1.0;
-	reloadReplaySkipSeconds = 0.0f;
-	bReloadReplaying = false;
-	bReloadReplayComplete = false;
+	boneReplay.Reset();
 	lastBonePinPhase = 0;
 	bHasCapturedGrip = false;
 	gripFromWristLocal.identity();
@@ -531,7 +444,9 @@ bool ManualReloadController::CanLoadAnotherShell() const
 
 bool ManualReloadController::IsLocalViewModel(const HaloID& id) const
 {
-	return cachedViewModelAsset == id && WH().GetRightWristIndex() >= 0;
+	return cachedViewModelAsset.id == id.id
+		&& cachedViewModelAsset.index == id.index
+		&& WH().GetRightWristIndex() >= 0;
 }
 
 bool ManualReloadController::ShouldContinueContinuousReloadSession() const
@@ -640,20 +555,12 @@ Vector3 ManualReloadController::GetBeltMagazineWorldPosition() const
 	beltPos.z -= G().c_BeltMagazineHipDrop->Value();
 
 	Matrix4 headTransform = G().GetVR()->GetHMDTransform(true);
-	Vector3 forward = headTransform.getForwardAxis();
-	forward.z = 0.0f;
-	if (forward.lengthSqr() < 0.0001f)
-	{
-		forward = Vector3(1.0f, 0.0f, 0.0f);
-	}
-	else
-	{
-		forward.normalize();
-	}
-
-	const Vector3 worldUp(0.0f, 0.0f, 1.0f);
-	Vector3 left = worldUp.cross(forward);
-	left.normalize();
+	Vector3 forward;
+	Vector3 left;
+	SkeletonAnim::GetLeveledBasisFromForward(
+		SkeletonAnim::FlattenForwardOnXY(headTransform.getForwardAxis()),
+		forward,
+		left);
 
 	const Vector3 offset = G().c_BeltMagazineOffset->Value();
 	const float scale = G().MetresToWorld(1.0f);
@@ -676,12 +583,8 @@ Vector3 ManualReloadController::GetMagazineGripWorldOffset() const
 {
 	const ControllerRole offHand = G().bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
 	Matrix4 offHandTransform = G().GetVR()->GetControllerTransform(offHand, true);
-	const Vector3 controllerOrigin = offHandTransform * Vector3(0.0f, 0.0f, 0.0f);
-
-	Matrix4 handRotation = offHandTransform;
-	handRotation.translate(-controllerOrigin);
-
-	Vector3 worldOffset = handRotation * G().c_MagazineGripControllerOffset->Value();
+	Vector3 worldOffset = SkeletonAnim::GetRotationMatrix(offHandTransform)
+		* G().c_MagazineGripControllerOffset->Value();
 	worldOffset *= G().MetresToWorld(1.0f);
 	return worldOffset;
 }
@@ -844,22 +747,7 @@ void ManualReloadController::ApplyAnimPin()
 		: static_cast<uint16_t>(GetActiveReloadAnimIndex());
 	const uint16_t pinnedFrame = pausedReloadAnimFrame;
 
-	if (pinnedAnim != 0xFFFF)
-	{
-		weaponObject->animation = pinnedAnim;
-	}
-
-	weaponObject->animFrame = pinnedFrame;
-
-	if (Helpers::HasFirstPersonAnimBase())
-	{
-		if (pinnedAnim != 0xFFFF)
-		{
-			Helpers::SetFirstPersonBaseAnimId(pinnedAnim);
-		}
-
-		Helpers::SetFirstPersonBaseAnimFrame(pinnedFrame);
-	}
+	SkeletonAnim::PinWeaponFirstPersonAnimation(weaponObject, pinnedAnim, pinnedFrame);
 }
 
 void ManualReloadController::UpdateReloadAnimationPause()
@@ -980,8 +868,8 @@ void ManualReloadController::UpdateReloadAnimationPause()
 		const int safetyFrames = static_cast<int>(frozenReloadRemaining) * 6 + 60;
 		const bool bTimerDone = weapon.reloadRemaining == 0 || weapon.reloadState == 0;
 		const bool bFinishTimedOut = finishFrameCounter >= safetyFrames;
-		const bool bHasReplay = reloadReplayCount > 1;
-		const bool bVisualDone = !bHasReplay || bReloadReplayComplete;
+		const bool bHasReplay = boneReplay.HasMultipleSamples();
+		const bool bVisualDone = !bHasReplay || boneReplay.IsReplayComplete();
 
 		if (weapon.ammo == 0 && ((bTimerDone && bVisualDone) || bFinishTimedOut))
 		{
@@ -1061,7 +949,7 @@ void ManualReloadController::ResumeManualReloadAnimation()
 	const int pauseTicks = ReloadSettings(cachedWeaponType).PauseTicks;
 	const int resumeTicks = ReloadSettings(cachedWeaponType).ResumeTicks;
 	const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
-	reloadReplaySkipSeconds = std::max(0.0f, static_cast<float>(skipTicks) / 30.0f);
+	replaySkipSeconds = std::max(0.0f, static_cast<float>(skipTicks) / 30.0f);
 
 	const uint16_t realRemaining = frozenReloadRemaining;
 	if (realRemaining > 0)
@@ -1084,7 +972,7 @@ void ManualReloadController::ResumeManualReloadAnimation()
 	if (IsDebugLogging())
 	{
 		Logger::log << "[ManualReload] resume skipTicks=" << skipTicks
-			<< " replay=" << (reloadReplayCount > 1 ? "yes" : "no")
+			<< " replay=" << (boneReplay.HasMultipleSamples() ? "yes" : "no")
 			<< std::endl;
 	}
 }
@@ -1211,14 +1099,9 @@ void ManualReloadController::CaptureReloadStartInsertSocket(const Transform* out
 		return;
 	}
 
-	Matrix4 gunMatrix;
-	Transform gunTransform = outBoneTransforms[gunIndex];
-	TransformToMatrix4(gunTransform, gunMatrix);
-
-	Matrix4 gunInverse = gunMatrix;
-	gunInverse.invertAffine();
-
-	reloadStartMagLocalOffset = gunInverse * outBoneTransforms[magIndex].translation;
+	reloadStartMagLocalOffset = SkeletonAnim::CapturePointInBoneSpace(
+		outBoneTransforms[gunIndex],
+		outBoneTransforms[magIndex].translation);
 	bHasReloadStartMagSocket = true;
 
 	if (IsDebugLogging())
@@ -1247,10 +1130,9 @@ void ManualReloadController::UpdateInsertSocketFromGun(const Transform* outBoneT
 		return;
 	}
 
-	Matrix4 gunMatrix;
-	Transform gunTransform = outBoneTransforms[gunIndex];
-	TransformToMatrix4(gunTransform, gunMatrix);
-	magazineSocketPosition = gunMatrix * reloadStartMagLocalOffset;
+	magazineSocketPosition = SkeletonAnim::ApplyPointInBoneSpace(
+		outBoneTransforms[gunIndex],
+		reloadStartMagLocalOffset);
 
 	if (IsDebugLogging())
 	{
@@ -1279,7 +1161,7 @@ void ManualReloadController::UpdateInsertSocketFromGun(const Transform* outBoneT
 
 void ManualReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up)
 {
-	if (bHasCapturedGrip || reloadReplayCount <= 0)
+	if (bHasCapturedGrip || boneReplay.GetSampleCount() <= 0)
 	{
 		return;
 	}
@@ -1296,39 +1178,27 @@ void ManualReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* pos,
 	const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
 	const float skipSeconds = static_cast<float>(skipTicks) / 30.0f;
 
-	int replayIndex = -1;
-	for (int i = 0; i < reloadReplayCount; i++)
-	{
-		if (reloadReplayTimes[i] >= skipSeconds)
-		{
-			replayIndex = i;
-			break;
-		}
-	}
-
+	const int replayIndex = boneReplay.FindSampleIndexAtOrAfter(skipSeconds);
 	if (replayIndex < 0)
 	{
 		return;
 	}
 
-	TransformQuat resumeQuats[64]{};
-	memcpy(resumeQuats, reloadReplayFrames[replayIndex], sizeof(resumeQuats));
+	const TransformQuat* sampleQuats = boneReplay.GetSampleQuats(replayIndex);
+	if (!sampleQuats)
+	{
+		return;
+	}
 
-	Transform animPoseTransforms[64]{};
-	EvaluateAnimPose(id, pos, facing, up, resumeQuats, animPoseTransforms);
+	TransformQuat resumeQuats[SkeletonAnim::kMaxBones]{};
+	memcpy(resumeQuats, sampleQuats, sizeof(resumeQuats));
 
-	Matrix4 wristMatrix;
-	Transform wristTransform = animPoseTransforms[wristIndex];
-	TransformToMatrix4(wristTransform, wristMatrix);
+	Transform animPoseTransforms[SkeletonAnim::kMaxBones]{};
+	SkeletonAnim::EvaluatePose(id, pos, facing, up, resumeQuats, animPoseTransforms);
 
-	Matrix4 magMatrix;
-	Transform magTransform = animPoseTransforms[magIndex];
-	TransformToMatrix4(magTransform, magMatrix);
-
-	Matrix4 wristInverse = wristMatrix;
-	wristInverse.invertAffine();
-
-	gripFromWristLocal = wristInverse * magMatrix;
+	gripFromWristLocal = SkeletonAnim::CaptureChildInParentSpace(
+		animPoseTransforms[wristIndex],
+		animPoseTransforms[magIndex]);
 	bHasCapturedGrip = true;
 
 	if (IsDebugLogging())
@@ -1352,50 +1222,10 @@ bool ManualReloadController::GetGrabbedMagazineTargetMatrix(const Transform* out
 		return false;
 	}
 
-	Matrix4 wristMatrix;
-	Transform wristTransform = outBoneTransforms[wristIndex];
-	TransformToMatrix4(wristTransform, wristMatrix);
-
-	outTargetMatrix = wristMatrix * gripFromWristLocal;
+	outTargetMatrix = SkeletonAnim::ApplyChildInParentSpace(
+		outBoneTransforms[wristIndex],
+		gripFromWristLocal);
 	return true;
-}
-
-void ManualReloadController::RelocateMagazineBones(
-	Transform* outBoneTransforms,
-	const Vector3& targetRootPos,
-	const Matrix4& targetRootOrientation) const
-{
-	const int rootIndex = GetMagazineRootBoneIndex();
-	if (rootIndex < 0)
-	{
-		return;
-	}
-
-	Matrix4 originalRootMatrix;
-	TransformToMatrix4(outBoneTransforms[rootIndex], originalRootMatrix);
-
-	Matrix4 originalRootInverse = originalRootMatrix;
-	originalRootInverse.invertAffine();
-
-	Matrix4 newRootMatrix = targetRootOrientation;
-	newRootMatrix.setColumn(3, targetRootPos);
-
-	for (int i = 0; i < 64; i++)
-	{
-		if (!IsMagazineBone(i))
-		{
-			continue;
-		}
-
-		Matrix4 originalBoneMatrix;
-		TransformToMatrix4(outBoneTransforms[i], originalBoneMatrix);
-
-		Matrix4 relativeMatrix = originalRootInverse * originalBoneMatrix;
-		Matrix4 newBoneMatrix = newRootMatrix * relativeMatrix;
-
-		ApplyMatrixToTransform(newBoneMatrix, outBoneTransforms[i]);
-		outBoneTransforms[i].scale = 1.0f;
-	}
 }
 
 Matrix4 ManualReloadController::GetDetachedMagazineOrientation(const Transform* outBoneTransforms) const
@@ -1409,48 +1239,11 @@ Matrix4 ManualReloadController::GetDetachedMagazineOrientation(const Transform* 
 		}
 
 		const ControllerRole offHand = G().bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
-		Matrix4 controllerTransform = G().GetVR()->GetControllerTransform(offHand, true);
-
-		Matrix4 orientation;
-		orientation.identity();
-		for (int x = 0; x < 3; x++)
-		{
-			for (int y = 0; y < 3; y++)
-			{
-				const_cast<float*>(orientation.get())[x + y * 4] = controllerTransform.get()[x + y * 4];
-			}
-		}
-
-		return orientation;
+		return SkeletonAnim::GetRotationMatrix(G().GetVR()->GetControllerTransform(offHand, true));
 	}
 
-	Matrix4 headTransform = G().GetVR()->GetHMDTransform(true);
-	Vector3 forward = headTransform.getForwardAxis();
-	forward.z = 0.0f;
-	if (forward.lengthSqr() < 0.0001f)
-	{
-		forward = Vector3(1.0f, 0.0f, 0.0f);
-	}
-	else
-	{
-		forward.normalize();
-	}
-
-	const Vector3 up(0.0f, 0.0f, 1.0f);
-	Transform orientationTransform;
-	Helpers::MakeTransformFromXZ(&forward, &up, &orientationTransform);
-
-	Matrix4 orientation;
-	TransformToMatrix4(orientationTransform, orientation);
-
-	Vector3 left = up.cross(forward);
-	if (left.lengthSqr() > 0.0001f)
-	{
-		left.normalize();
-		orientation.rotate(90.0f, left);
-	}
-
-	return orientation;
+	return SkeletonAnim::MakeBeltObjectOrientation(
+		SkeletonAnim::FlattenForwardOnXY(G().GetVR()->GetHMDTransform(true).getForwardAxis()));
 }
 
 void ManualReloadController::UpdateMagazinePlacement(const HaloID& id, Transform* outBoneTransforms)
@@ -1492,7 +1285,12 @@ void ManualReloadController::UpdateMagazinePlacement(const HaloID& id, Transform
 		return;
 	}
 
-	RelocateMagazineBones(outBoneTransforms, targetPos, GetDetachedMagazineOrientation(outBoneTransforms));
+	SkeletonAnim::RelocateBoneSubtree(
+		outBoneTransforms,
+		magazineHideBones,
+		rootIndex,
+		targetPos,
+		GetDetachedMagazineOrientation(outBoneTransforms));
 
 	if (bDebug)
 	{
@@ -1505,16 +1303,8 @@ void ManualReloadController::UpdateMagazinePlacement(const HaloID& id, Transform
 				<< std::endl;
 		}
 
-		Vector3 forward = GetDetachedMagazineOrientation(outBoneTransforms).getForwardAxis();
-		forward.z = 0.0f;
-		if (forward.lengthSqr() < 0.0001f)
-		{
-			forward = Vector3(1.0f, 0.0f, 0.0f);
-		}
-		else
-		{
-			forward.normalize();
-		}
+		Vector3 forward = SkeletonAnim::FlattenForwardOnXY(
+			GetDetachedMagazineOrientation(outBoneTransforms).getForwardAxis());
 
 		const Vector3 up(0.0f, 0.0f, 1.0f);
 		G().inGameRenderer.DrawPolygon(
@@ -1542,85 +1332,25 @@ void ManualReloadController::ApplyBonePin(const HaloID& id, TransformQuat* boneT
 
 	if (phaseInt == kPausedAtEject)
 	{
-		if (!bHasPausedBoneSnapshot)
+		if (!boneReplay.HasSnapshot())
 		{
-			memcpy(pausedBoneTransforms, boneTransforms, sizeof(pausedBoneTransforms));
-			bHasPausedBoneSnapshot = true;
-
-			memcpy(reloadReplayFrames[0], boneTransforms, sizeof(reloadReplayFrames[0]));
-			reloadReplayTimes[0] = 0.0f;
-			reloadReplayCount = 1;
-			reloadRecordComplete = false;
-			reloadPauseStartSeconds = now;
-
 			const float remainingTicks = static_cast<float>(frozenReloadRemaining);
-			reloadRecordTargetSeconds = std::min(4.0f, std::max(0.5f, remainingTicks / 30.0f + 0.15f));
+			const float recordTargetSeconds = std::min(4.0f, std::max(0.5f, remainingTicks / 30.0f + 0.15f));
+			boneReplay.BeginCapture(boneTransforms, now, recordTargetSeconds);
 		}
 		else
 		{
-			if (!reloadRecordComplete)
-			{
-				const float elapsed = static_cast<float>(now - reloadPauseStartSeconds);
-				const float lastSampleTime = reloadReplayTimes[reloadReplayCount - 1];
-				const bool spacedEnough = (elapsed - lastSampleTime) >= (1.0f / 130.0f);
-
-				if (reloadReplayCount >= kMaxReloadReplayFrames || elapsed >= reloadRecordTargetSeconds)
-				{
-					reloadRecordComplete = true;
-				}
-				else if (spacedEnough)
-				{
-					memcpy(reloadReplayFrames[reloadReplayCount], boneTransforms, sizeof(reloadReplayFrames[0]));
-					reloadReplayTimes[reloadReplayCount] = elapsed;
-					reloadReplayCount++;
-				}
-			}
-
-			memcpy(boneTransforms, pausedBoneTransforms, sizeof(pausedBoneTransforms));
+			boneReplay.TickCapture(boneTransforms, now);
 		}
 	}
 	else if (phaseInt == kPlayingFinish)
 	{
 		if (lastBonePinPhase != kPlayingFinish)
 		{
-			reloadReplayStartSeconds = now - reloadReplaySkipSeconds;
-			bReloadReplayComplete = false;
-
-			const float lastTime = reloadReplayCount > 0
-				? reloadReplayTimes[reloadReplayCount - 1]
-				: 0.0f;
-			bReloadReplaying = reloadReplayCount > 1 && reloadReplaySkipSeconds < lastTime;
-			if (reloadReplayCount > 1 && reloadReplaySkipSeconds >= lastTime)
-			{
-				bReloadReplayComplete = true;
-			}
+			boneReplay.BeginReplay(now, replaySkipSeconds);
 		}
 
-		if (bReloadReplaying)
-		{
-			const float t = static_cast<float>(now - reloadReplayStartSeconds);
-			const float lastTime = reloadReplayTimes[reloadReplayCount - 1];
-
-			if (t >= lastTime)
-			{
-				memcpy(boneTransforms, reloadReplayFrames[reloadReplayCount - 1], sizeof(reloadReplayFrames[0]));
-				bReloadReplaying = false;
-				bReloadReplayComplete = true;
-			}
-			else
-			{
-				int idx = reloadReplayCount - 1;
-				for (int i = 1; i < reloadReplayCount; i++)
-				{
-					if (reloadReplayTimes[i] >= t)
-					{
-						idx = i;
-						break;
-					}
-				}
-				memcpy(boneTransforms, reloadReplayFrames[idx], sizeof(reloadReplayFrames[0]));
-			}
-		}
+		boneReplay.ApplyReplay(boneTransforms, now);
 	}
 
 	lastBonePinPhase = phaseInt;

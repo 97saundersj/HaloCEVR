@@ -6,6 +6,7 @@
 #include "../WeaponHandler.h"
 #include "Maths.h"
 #include "Objects.h"
+#include "SkeletonAnim.h"
 
 enum class EManualReloadPhase
 {
@@ -75,19 +76,8 @@ private:
 	int finishFrameCounter = 0;
 
 	// Bone pin / record-replay (engine FP reload is not seekable).
-	static constexpr int kMaxReloadReplayFrames = 320;
-	TransformQuat pausedBoneTransforms[64]{};
-	bool bHasPausedBoneSnapshot = false;
-	TransformQuat reloadReplayFrames[kMaxReloadReplayFrames][64]{};
-	float reloadReplayTimes[kMaxReloadReplayFrames]{};
-	int reloadReplayCount = 0;
-	bool reloadRecordComplete = false;
-	float reloadRecordTargetSeconds = 0.0f;
-	double reloadPauseStartSeconds = -1.0;
-	double reloadReplayStartSeconds = -1.0;
-	float reloadReplaySkipSeconds = 0.0f;
-	bool bReloadReplaying = false;
-	bool bReloadReplayComplete = false;
+	SkeletonAnim::SampleBuffer boneReplay;
+	float replaySkipSeconds = 0.0f;
 	int lastBonePinPhase = 0;
 
 	// Mag-well insert target (gun-local at reload start).
@@ -147,7 +137,6 @@ private:
 	bool GetOffHandNearBelt(bool& gripHeld, bool& gripChanged) const;
 	bool GetGrabbedMagazineTargetMatrix(const Transform* outBoneTransforms, Matrix4& outTargetMatrix) const;
 	Matrix4 GetDetachedMagazineOrientation(const Transform* outBoneTransforms) const;
-	void RelocateMagazineBones(Transform* outBoneTransforms, const Vector3& targetRootPos, const Matrix4& targetRootOrientation) const;
 
 	void BeginSoundCapture();
 	void PauseSounds();
