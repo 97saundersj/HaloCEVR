@@ -27,9 +27,9 @@ WeaponHandler& WH()
 	return Game::instance.GetWeaponHandler();
 }
 
-const WeaponManualReloadSettings& ReloadSettings()
+const WeaponManualReloadSettings& ReloadSettings(WeaponType weaponType)
 {
-	return Game::instance.weaponManualReloadConfig.GetSettings(WH().GetCachedWeaponType());
+	return Game::instance.weaponManualReloadConfig.GetSettings(weaponType);
 }
 
 WeaponDynamicObject* GetLocalWeaponObject()
@@ -185,7 +185,7 @@ void PhysicalReloadController::SuppressVanillaReloadControl(unsigned char& reloa
 		return;
 	}
 
-	if (G().bUse3DOFAiming || !WH().HasMagazineBones())
+	if (G().bUse3DOFAiming || !HasMagazineBones())
 	{
 		return;
 	}
@@ -201,7 +201,7 @@ bool PhysicalReloadController::ShouldBlockAutoReloadStart() const
 	}
 
 	IVR* vr = G().GetVR();
-	if (G().bUse3DOFAiming || !WH().HasMagazineBones())
+	if (G().bUse3DOFAiming || !HasMagazineBones())
 	{
 		return !vr->GetBoolInput(input.GetReloadInput());
 	}
@@ -277,43 +277,294 @@ void PhysicalReloadController::EndShotgunShellSession()
 	ResetCycleCore();
 }
 
-void PhysicalReloadController::OnWeaponChanged()
+void PhysicalReloadController::ClearReloadMetadata()
+{
+	cachedViewModelAsset = HaloID{ 0, 0 };
+	cachedWeaponType = WeaponType::Unknown;
+	bHasMagazineBones = false;
+	magazineRootBoneIndex = -1;
+	reloadEmptyAnimIndex = -1;
+	reloadExitEmptyAnimIndex = -1;
+	reloadFullAnimIndex = -1;
+	reloadExitFullAnimIndex = -1;
+	magazineCapacity = 0;
+	memset(magazineHideBones, 0, sizeof(magazineHideBones));
+}
+
+void PhysicalReloadController::MarkMagazineBone(int boneIndex)
+{
+	if (boneIndex >= 0 && boneIndex < 64)
+	{
+		magazineHideBones[boneIndex] = true;
+	}
+}
+
+void PhysicalReloadController::MarkMagazineDescendants(Bone* boneArray, int numBones, int rootIndex)
+{
+	if (!boneArray || rootIndex < 0 || rootIndex >= numBones)
+	{
+		return;
+	}
+
+	MarkMagazineBone(rootIndex);
+
+	for (int i = 0; i < numBones && i < 64; i++)
+	{
+		if (i == rootIndex)
+		{
+			continue;
+		}
+
+		int parentIndex = boneArray[i].Parent;
+		int guard = 0;
+		while (parentIndex >= 0 && parentIndex < numBones && guard++ < numBones)
+		{
+			if (parentIndex == rootIndex)
+			{
+				MarkMagazineBone(i);
+				break;
+			}
+
+			parentIndex = boneArray[parentIndex].Parent;
+		}
+	}
+}
+
+void PhysicalReloadController::CacheReloadMetadata(
+	const HaloID& id,
+	AssetData_ModelAnimations* animationData,
+	WeaponType weaponType)
+{
+	ClearReloadMetadata();
+	cachedViewModelAsset = id;
+	cachedWeaponType = weaponType;
+	magazineCapacity = ReloadSettings(cachedWeaponType).MagazineCapacity;
+
+	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0)
+	{
+		return;
+	}
+
+	Bone* boneArray = animationData->BoneArray;
+
+	for (int i = 0; i < animationData->NumAnimations; i++)
+	{
+		const char* animName = animationData->AnimationArray[i].N00000429;
+		if (!animName || !animName[0])
+		{
+			continue;
+		}
+
+		if (reloadEmptyAnimIndex < 0 && strstr(animName, "reload-empty"))
+		{
+			reloadEmptyAnimIndex = i;
+		}
+
+		if (reloadExitEmptyAnimIndex < 0
+			&& (strstr(animName, "exit-empty") || strstr(animName, "exit empty")
+				|| strstr(animName, "exit_empty") || strstr(animName, "reload-exit-empty")
+				|| strstr(animName, "reload-exit")))
+		{
+			reloadExitEmptyAnimIndex = i;
+		}
+
+		if (reloadFullAnimIndex < 0
+			&& (strstr(animName, "reload-full") || strstr(animName, "reload full")))
+		{
+			reloadFullAnimIndex = i;
+		}
+
+		if (reloadExitFullAnimIndex < 0
+			&& (strstr(animName, "exit-full") || strstr(animName, "exit full")
+				|| strstr(animName, "exit_full") || strstr(animName, "reload-exit-full")))
+		{
+			reloadExitFullAnimIndex = i;
+		}
+	}
+
+	if (reloadEmptyAnimIndex >= 0 || reloadExitEmptyAnimIndex >= 0
+		|| reloadFullAnimIndex >= 0 || reloadExitFullAnimIndex >= 0)
+	{
+		Logger::log << "[PhysicalReload] Reload anim indices: empty=" << reloadEmptyAnimIndex
+			<< " exitEmpty=" << reloadExitEmptyAnimIndex
+			<< " full=" << reloadFullAnimIndex
+			<< " exitFull=" << reloadExitFullAnimIndex << std::endl;
+	}
+
+	for (int i = 0; i < animationData->NumBones && i < 64; i++)
+	{
+		if (!G().weaponManualReloadConfig.IsMagazineBoneName(weaponType, boneArray[i].BoneName))
+		{
+			continue;
+		}
+
+		magazineRootBoneIndex = i;
+		break;
+	}
+
+	if (magazineRootBoneIndex < 0)
+	{
+		return;
+	}
+
+	bHasMagazineBones = true;
+	MarkMagazineBone(magazineRootBoneIndex);
+
+	const char* rootName = boneArray[magazineRootBoneIndex].BoneName;
+	const WeaponManualReloadSettings& reloadSettings = ReloadSettings(cachedWeaponType);
+	const bool bShellOnlyRoot = _stricmp(rootName, reloadSettings.MagazineBoneName.c_str()) == 0
+		&& reloadSettings.ContinuousReload;
+
+	if (!bShellOnlyRoot)
+	{
+		MarkMagazineDescendants(boneArray, animationData->NumBones, magazineRootBoneIndex);
+
+		bool bMarkChanged = true;
+		while (bMarkChanged)
+		{
+			bMarkChanged = false;
+			for (int i = 0; i < animationData->NumBones && i < 64; i++)
+			{
+				if (magazineHideBones[i])
+				{
+					continue;
+				}
+
+				const int parentIndex = boneArray[i].Parent;
+				if (parentIndex >= 0 && parentIndex < 64 && magazineHideBones[parentIndex])
+				{
+					MarkMagazineBone(i);
+					bMarkChanged = true;
+				}
+			}
+		}
+	}
+
+	int markedBoneCount = 0;
+	for (int i = 0; i < 64; i++)
+	{
+		if (magazineHideBones[i])
+		{
+			markedBoneCount++;
+		}
+	}
+
+	Logger::log << "[PhysicalReload] Magazine bone cached: index "
+		<< magazineRootBoneIndex << " (\"" << rootName << "\")"
+		<< " markedBones=" << markedBoneCount << std::endl;
+
+	if (IsDebugLogging())
+	{
+		WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
+		if (weaponObject)
+		{
+			const Weapon& liveWeapon = weaponObject->weaponData[0];
+			Logger::log << "[PhysicalReload] magazineCapacity=" << magazineCapacity
+				<< " weaponType=" << static_cast<int>(cachedWeaponType)
+				<< " ammo=" << liveWeapon.ammo
+				<< " reserveAmmo=" << liveWeapon.reserveAmmo
+				<< std::endl;
+		}
+	}
+}
+
+void PhysicalReloadController::OnViewModelCached(
+	const HaloID& id,
+	AssetData_ModelAnimations* animationData,
+	WeaponType weaponType)
 {
 	bShotgunShellSessionUserCancelled = false;
 	ResetState();
+	CacheReloadMetadata(id, animationData, weaponType);
+}
+
+bool PhysicalReloadController::IsMagazineBone(int boneIndex) const
+{
+	return boneIndex >= 0 && boneIndex < 64 && magazineHideBones[boneIndex];
+}
+
+int PhysicalReloadController::GetMagazineRootBoneIndex() const
+{
+	if (magazineRootBoneIndex >= 0)
+	{
+		return magazineRootBoneIndex;
+	}
+
+	for (int i = 0; i < 64; i++)
+	{
+		if (magazineHideBones[i])
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+bool PhysicalReloadController::IsLocalMagazineEmpty() const
+{
+	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
+	return weaponObject && weaponObject->weaponData[0].ammo == 0;
+}
+
+bool PhysicalReloadController::IsShellByShellReloadWeapon() const
+{
+	return ReloadSettings(cachedWeaponType).ContinuousReload;
+}
+
+bool PhysicalReloadController::CanLoadAnotherShell() const
+{
+	if (!IsShellByShellReloadWeapon() || magazineCapacity == 0)
+	{
+		return false;
+	}
+
+	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
+	if (!weaponObject)
+	{
+		return false;
+	}
+
+	const Weapon& weapon = weaponObject->weaponData[0];
+	return weapon.reserveAmmo > 0 && weapon.ammo < magazineCapacity;
+}
+
+bool PhysicalReloadController::IsLocalViewModel(const HaloID& id) const
+{
+	return cachedViewModelAsset == id && WH().GetRightWristIndex() >= 0;
 }
 
 bool PhysicalReloadController::ShouldContinueContinuousReloadSession() const
 {
-	const WeaponManualReloadSettings& settings = ReloadSettings();
+	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	return bShotgunShellSessionActive
 		&& settings.ContinuousReload
-		&& WH().IsShellByShellReloadWeapon()
-		&& WH().CanLoadAnotherShell();
+		&& IsShellByShellReloadWeapon()
+		&& CanLoadAnotherShell();
 }
 
 bool PhysicalReloadController::ShouldAutoStartContinuousReloadSession() const
 {
-	const WeaponManualReloadSettings& settings = ReloadSettings();
+	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	return settings.ContinuousReload
 		&& !bShotgunShellSessionUserCancelled
-		&& WH().IsShellByShellReloadWeapon()
-		&& WH().CanLoadAnotherShell()
+		&& IsShellByShellReloadWeapon()
+		&& CanLoadAnotherShell()
 		&& phase == EPhysicalReloadPhase::Idle
 		&& !G().bIsReloading;
 }
 
 bool PhysicalReloadController::ShouldShowBeltMagazine() const
 {
-	if (!WH().HasMagazineBones() || G().bUse3DOFAiming)
+	if (!HasMagazineBones() || G().bUse3DOFAiming)
 	{
 		return false;
 	}
 
-	if (WH().IsShellByShellReloadWeapon()
+	if (IsShellByShellReloadWeapon()
 		&& bShotgunShellSessionActive
 		&& phase == EPhysicalReloadPhase::Idle
-		&& WH().CanLoadAnotherShell())
+		&& CanLoadAnotherShell())
 	{
 		return true;
 	}
@@ -323,15 +574,13 @@ bool PhysicalReloadController::ShouldShowBeltMagazine() const
 
 int PhysicalReloadController::GetActiveReloadAnimIndex() const
 {
-	const WeaponManualReloadSettings& settings = ReloadSettings();
+	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	if (bPhysicalReloadFromEmpty || settings.ContinuousReload)
 	{
-		const int primary = WH().GetReloadEmptyAnimIndex();
-		return primary >= 0 ? primary : WH().GetReloadExitEmptyAnimIndex();
+		return reloadEmptyAnimIndex >= 0 ? reloadEmptyAnimIndex : reloadExitEmptyAnimIndex;
 	}
 
-	const int primary = WH().GetReloadFullAnimIndex();
-	return primary >= 0 ? primary : WH().GetReloadExitFullAnimIndex();
+	return reloadFullAnimIndex >= 0 ? reloadFullAnimIndex : reloadExitFullAnimIndex;
 }
 
 void PhysicalReloadController::TriggerWeaponReload()
@@ -502,7 +751,7 @@ void PhysicalReloadController::TickSwapSuppression()
 
 bool PhysicalReloadController::ShouldSuspendShotgunActiveReloadForFire() const
 {
-	const WeaponManualReloadSettings& settings = ReloadSettings();
+	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	if (!settings.ContinuousReload
 		|| !bShotgunShellSessionActive
 		|| phase != EPhysicalReloadPhase::PausedAtEject)
@@ -545,7 +794,7 @@ void PhysicalReloadController::OnPreHandleInputs()
 
 void PhysicalReloadController::TryBeginShotgunLoadFromBelt()
 {
-	const WeaponManualReloadSettings& settings = ReloadSettings();
+	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	if (!settings.ContinuousReload
 		|| !bShotgunShellSessionActive
 		|| phase != EPhysicalReloadPhase::Idle
@@ -653,10 +902,10 @@ void PhysicalReloadController::UpdateReloadAnimationPause()
 			const uint16_t reloadElapsed = initialReloadRemaining > weaponObject->weaponData[0].reloadRemaining
 				? initialReloadRemaining - weaponObject->weaponData[0].reloadRemaining
 				: 0;
-			Logger::log << "[PhysicalReload] weapon=" << static_cast<int>(WH().GetCachedWeaponType())
+			Logger::log << "[PhysicalReload] weapon=" << static_cast<int>(cachedWeaponType)
 				<< " phase=" << static_cast<int>(phase)
-				<< " pauseTicks=" << ReloadSettings().PauseTicks
-				<< " resumeTicks=" << ReloadSettings().ResumeTicks
+				<< " pauseTicks=" << ReloadSettings(cachedWeaponType).PauseTicks
+				<< " resumeTicks=" << ReloadSettings(cachedWeaponType).ResumeTicks
 				<< " reloadElapsed=" << reloadElapsed
 				<< " fpAnim=" << Helpers::GetFirstPersonBaseAnimId()
 				<< " fpFrame=" << Helpers::GetFirstPersonBaseAnimFrame()
@@ -682,7 +931,7 @@ void PhysicalReloadController::UpdateReloadAnimationPause()
 			initialReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
 		}
 
-		const int pauseTicks = ReloadSettings().PauseTicks;
+		const int pauseTicks = ReloadSettings(cachedWeaponType).PauseTicks;
 		const int reloadAnimIndex = GetActiveReloadAnimIndex();
 
 		if (ShouldPausePhysicalReload(initialReloadRemaining, weaponObject->weaponData[0].reloadRemaining, pauseTicks))
@@ -755,7 +1004,7 @@ void PhysicalReloadController::UpdateReloadAnimationPause()
 
 void PhysicalReloadController::BeginPhysicalReload()
 {
-	const WeaponManualReloadSettings& settings = ReloadSettings();
+	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	if (settings.ContinuousReload)
 	{
 		bShotgunShellSessionActive = true;
@@ -771,7 +1020,7 @@ void PhysicalReloadController::BeginChainedShellReload()
 		return;
 	}
 
-	bPhysicalReloadFromEmpty = WH().IsLocalMagazineEmpty();
+	bPhysicalReloadFromEmpty = IsLocalMagazineEmpty();
 	bManualPhysicalReloadPending = true;
 	phase = EPhysicalReloadPhase::PlayingEject;
 	initialReloadRemaining = 0;
@@ -809,8 +1058,8 @@ void PhysicalReloadController::ResumePhysicalReloadAnimation()
 	hapticsConfig.LoadConfig();
 	hapticsConfig.HandleWeaponHaptics(G().GetVR(), offHand, hapticsConfig.physicalReloadInsert);
 
-	const int pauseTicks = ReloadSettings().PauseTicks;
-	const int resumeTicks = ReloadSettings().ResumeTicks;
+	const int pauseTicks = ReloadSettings(cachedWeaponType).PauseTicks;
+	const int resumeTicks = ReloadSettings(cachedWeaponType).ResumeTicks;
 	const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
 	reloadReplaySkipSeconds = std::max(0.0f, static_cast<float>(skipTicks) / 30.0f);
 
@@ -878,7 +1127,7 @@ void PhysicalReloadController::Update()
 {
 	if (!G().c_DisableEmptyMagazineAutoReload->Value()
 		|| G().bUse3DOFAiming
-		|| !WH().HasMagazineBones())
+		|| !HasMagazineBones())
 	{
 		if (phase != EPhysicalReloadPhase::Idle)
 		{
@@ -956,7 +1205,7 @@ void PhysicalReloadController::CaptureReloadStartInsertSocket(const Transform* o
 	}
 
 	const int gunIndex = WH().GetGunIndex();
-	const int magIndex = WH().GetMagazineRootBoneIndex();
+	const int magIndex = GetMagazineRootBoneIndex();
 	if (gunIndex < 0 || magIndex < 0)
 	{
 		return;
@@ -1036,14 +1285,14 @@ void PhysicalReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* po
 	}
 
 	const int wristIndex = WH().GetLeftWristIndex();
-	const int magIndex = WH().GetMagazineRootBoneIndex();
+	const int magIndex = GetMagazineRootBoneIndex();
 	if (wristIndex < 0 || magIndex < 0)
 	{
 		return;
 	}
 
-	const int pauseTicks = ReloadSettings().PauseTicks;
-	const int resumeTicks = ReloadSettings().ResumeTicks;
+	const int pauseTicks = ReloadSettings(cachedWeaponType).PauseTicks;
+	const int resumeTicks = ReloadSettings(cachedWeaponType).ResumeTicks;
 	const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
 	const float skipSeconds = static_cast<float>(skipTicks) / 30.0f;
 
@@ -1116,7 +1365,7 @@ void PhysicalReloadController::RelocateMagazineBones(
 	const Vector3& targetRootPos,
 	const Matrix4& targetRootOrientation) const
 {
-	const int rootIndex = WH().GetMagazineRootBoneIndex();
+	const int rootIndex = GetMagazineRootBoneIndex();
 	if (rootIndex < 0)
 	{
 		return;
@@ -1133,7 +1382,7 @@ void PhysicalReloadController::RelocateMagazineBones(
 
 	for (int i = 0; i < 64; i++)
 	{
-		if (!WH().IsMagazineBone(i))
+		if (!IsMagazineBone(i))
 		{
 			continue;
 		}
@@ -1209,7 +1458,7 @@ void PhysicalReloadController::UpdateMagazinePlacement(const HaloID& id, Transfo
 	const bool bDebug = IsDebugLogging();
 	static int debugLogCounter = 0;
 
-	if (WH().GetCachedViewModelAsset() != id || WH().GetRightWristIndex() < 0)
+	if (!IsLocalViewModel(id))
 	{
 		if (bDebug && bMagazineEjected && debugLogCounter++ % 60 == 0)
 		{
@@ -1237,7 +1486,7 @@ void PhysicalReloadController::UpdateMagazinePlacement(const HaloID& id, Transfo
 		}
 	}
 
-	const int rootIndex = WH().GetMagazineRootBoneIndex();
+	const int rootIndex = GetMagazineRootBoneIndex();
 	if (rootIndex < 0)
 	{
 		return;
@@ -1281,7 +1530,7 @@ void PhysicalReloadController::UpdateMagazinePlacement(const HaloID& id, Transfo
 
 void PhysicalReloadController::ApplyBonePin(const HaloID& id, TransformQuat* boneTransforms)
 {
-	if (WH().GetCachedViewModelAsset() != id || WH().GetRightWristIndex() < 0)
+	if (!IsLocalViewModel(id))
 	{
 		return;
 	}

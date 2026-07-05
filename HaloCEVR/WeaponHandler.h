@@ -41,23 +41,10 @@ public:
 
 	bool IsSniperScope() const;
 
-	bool IsLocalMagazineEmpty() const;
-	bool HasMagazineBones() const;
-	bool IsShellByShellReloadWeapon() const;
-	bool CanLoadAnotherShell() const;
-	int GetReloadEmptyAnimIndex() const;
-	int GetReloadExitEmptyAnimIndex() const;
-	int GetReloadFullAnimIndex() const;
-	int GetReloadExitFullAnimIndex() const;
 	WeaponType GetCachedWeaponType() const { return cachedViewModel.weaponType; }
-
-	// View-model metadata used by physical reload visuals.
-	HaloID GetCachedViewModelAsset() const { return cachedViewModel.currentAsset; }
 	int GetLeftWristIndex() const { return cachedViewModel.leftWristIndex; }
 	int GetRightWristIndex() const { return cachedViewModel.rightWristIndex; }
 	int GetGunIndex() const { return cachedViewModel.gunIndex; }
-	int GetMagazineRootBoneIndex() const;
-	bool IsMagazineBone(int boneIndex) const;
 
 	Vector3 localOffset;
 	Vector3 localRotation;
@@ -76,8 +63,6 @@ protected:
 	inline void TransformToMatrix4(struct Transform& inTransform, class Matrix4& outMatrix) const;
 
 	bool IsFirstPersonWeaponAnimationsAsset(struct AssetData_ModelAnimations* animationData) const;
-	void MarkMagazineBone(int boneIndex);
-	void MarkMagazineDescendants(struct Bone* boneArray, int numBones, int rootIndex);
 	void LogViewModelBoneHierarchy(struct AssetData_ModelAnimations* animationData, const char* weaponAssetPath) const;
 	void LogViewModelBoneHierarchyNode(struct Bone* boneArray, int numBones, int boneIndex, int depth) const;
 
@@ -99,14 +84,6 @@ protected:
 		Matrix3 fireRotation;
 		WeaponType weaponType = WeaponType::Unknown;
 		bool IsShooting = false;
-		bool magazineHideBones[64]{};
-		bool bHasMagazineBones = false;
-		int magazineRootBoneIndex = -1;
-		int reloadEmptyAnimIndex = -1;
-		int reloadExitEmptyAnimIndex = -1;
-		int reloadFullAnimIndex = -1;
-		int reloadExitFullAnimIndex = -1;
-		uint16_t magazineCapacity = 0;
 	} cachedViewModel;
 
 	UnitDynamicObject* weaponFiredPlayer = nullptr;

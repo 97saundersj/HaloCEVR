@@ -59,45 +59,6 @@ static void ReferenceUpdateViewModelImpl(HaloID& id, Vector3* pos, Vector3* faci
 	}
 }
 
-void WeaponHandler::MarkMagazineBone(int boneIndex)
-{
-	if (boneIndex >= 0 && boneIndex < 64)
-	{
-		cachedViewModel.magazineHideBones[boneIndex] = true;
-	}
-}
-
-void WeaponHandler::MarkMagazineDescendants(Bone* boneArray, int numBones, int rootIndex)
-{
-	if (!boneArray || rootIndex < 0 || rootIndex >= numBones)
-	{
-		return;
-	}
-
-	MarkMagazineBone(rootIndex);
-
-	for (int i = 0; i < numBones && i < 64; i++)
-	{
-		if (i == rootIndex)
-		{
-			continue;
-		}
-
-		int parentIndex = boneArray[i].Parent;
-		int guard = 0;
-		while (parentIndex >= 0 && parentIndex < numBones && guard++ < numBones)
-		{
-			if (parentIndex == rootIndex)
-			{
-				MarkMagazineBone(i);
-				break;
-			}
-
-			parentIndex = boneArray[parentIndex].Parent;
-		}
-	}
-}
-
 bool WeaponHandler::IsFirstPersonWeaponAnimationsAsset(AssetData_ModelAnimations* animationData) const
 {
 	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0)
@@ -129,99 +90,6 @@ bool WeaponHandler::IsFirstPersonWeaponAnimationsAsset(AssetData_ModelAnimations
 	}
 
 	return hasFrameGun && hasFrameRWrist;
-}
-
-bool WeaponHandler::IsLocalMagazineEmpty() const
-{
-	BaseDynamicObject* player = Helpers::GetLocalPlayer();
-	if (!player || player->weapon.id == 0xffff)
-	{
-		return false;
-	}
-
-	WeaponDynamicObject* weaponObject = static_cast<WeaponDynamicObject*>(Helpers::GetDynamicObject(player->weapon));
-	if (!weaponObject)
-	{
-		return false;
-	}
-
-	return weaponObject->weaponData[0].ammo == 0;
-}
-
-bool WeaponHandler::HasMagazineBones() const
-{
-	return cachedViewModel.bHasMagazineBones;
-}
-
-int WeaponHandler::GetReloadEmptyAnimIndex() const
-{
-	return cachedViewModel.reloadEmptyAnimIndex;
-}
-
-int WeaponHandler::GetReloadExitEmptyAnimIndex() const
-{
-	return cachedViewModel.reloadExitEmptyAnimIndex;
-}
-
-int WeaponHandler::GetReloadFullAnimIndex() const
-{
-	return cachedViewModel.reloadFullAnimIndex;
-}
-
-int WeaponHandler::GetReloadExitFullAnimIndex() const
-{
-	return cachedViewModel.reloadExitFullAnimIndex;
-}
-
-bool WeaponHandler::IsMagazineBone(int boneIndex) const
-{
-	return boneIndex >= 0 && boneIndex < 64 && cachedViewModel.magazineHideBones[boneIndex];
-}
-
-bool WeaponHandler::IsShellByShellReloadWeapon() const
-{
-	return Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType).ContinuousReload;
-}
-
-bool WeaponHandler::CanLoadAnotherShell() const
-{
-	if (!IsShellByShellReloadWeapon() || cachedViewModel.magazineCapacity == 0)
-	{
-		return false;
-	}
-
-	BaseDynamicObject* player = Helpers::GetLocalPlayer();
-	if (!player || player->weapon.id == 0xffff)
-	{
-		return false;
-	}
-
-	WeaponDynamicObject* weaponObject = static_cast<WeaponDynamicObject*>(Helpers::GetDynamicObject(player->weapon));
-	if (!weaponObject)
-	{
-		return false;
-	}
-
-	const Weapon& weapon = weaponObject->weaponData[0];
-	return weapon.reserveAmmo > 0 && weapon.ammo < cachedViewModel.magazineCapacity;
-}
-
-int WeaponHandler::GetMagazineRootBoneIndex() const
-{
-	if (cachedViewModel.magazineRootBoneIndex >= 0)
-	{
-		return cachedViewModel.magazineRootBoneIndex;
-	}
-
-	for (int i = 0; i < 64; i++)
-	{
-		if (cachedViewModel.magazineHideBones[i])
-		{
-			return i;
-		}
-	}
-
-	return -1;
 }
 
 void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, TransformQuat* boneTransforms, Transform* outBoneTransforms)
@@ -701,12 +569,7 @@ void WeaponHandler::LogViewModelBoneHierarchyNode(Bone* boneArray, int numBones,
 	std::string indent(static_cast<size_t>(depth) * 2, ' ');
 	const Bone& bone = boneArray[boneIndex];
 
-	Logger::log << "[WeaponHandler] " << indent << "[" << boneIndex << "] " << bone.BoneName;
-	if (boneIndex < 64 && cachedViewModel.magazineHideBones[boneIndex])
-	{
-		Logger::log << " [magazine]";
-	}
-	Logger::log << std::endl;
+	Logger::log << "[WeaponHandler] " << indent << "[" << boneIndex << "] " << bone.BoneName << std::endl;
 
 	LogViewModelBoneHierarchyNode(boneArray, numBones, bone.LeftLeaf, depth + 1);
 	LogViewModelBoneHierarchyNode(boneArray, numBones, bone.RightLeaf, depth + 1);
@@ -747,14 +610,8 @@ void WeaponHandler::LogViewModelBoneHierarchy(AssetData_ModelAnimations* animati
 		Logger::log << "[WeaponHandler] Bone[" << i << "] \"" << bone.BoneName << "\""
 			<< " parent=" << bone.Parent << " (\"" << boneNameOrNone(bone.Parent) << "\")"
 			<< " left=" << bone.LeftLeaf << " (\"" << boneNameOrNone(bone.LeftLeaf) << "\")"
-			<< " right=" << bone.RightLeaf << " (\"" << boneNameOrNone(bone.RightLeaf) << "\")";
-
-		if (i < 64 && cachedViewModel.magazineHideBones[i])
-		{
-			Logger::log << " [magazine]";
-		}
-
-		Logger::log << std::endl;
+			<< " right=" << bone.RightLeaf << " (\"" << boneNameOrNone(bone.RightLeaf) << "\")"
+			<< std::endl;
 	}
 
 	if (numBones > 0)
@@ -768,11 +625,10 @@ void WeaponHandler::LogViewModelBoneHierarchy(AssetData_ModelAnimations* animati
 
 void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animationData)
 {
-	Game::instance.GetPhysicalReload().OnWeaponChanged();
-
 	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0 || animationData->NumBones > 256)
 	{
 		Logger::log << "[UpdateCache] Invalid animation data for asset " << id << std::endl;
+		Game::instance.GetPhysicalReload().OnViewModelCached(id, nullptr, WeaponType::Unknown);
 		return;
 	}
 
@@ -784,60 +640,9 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	cachedViewModel.rightWristIndex = -1;
 	cachedViewModel.gunIndex = -1;
 	cachedViewModel.displayIndex = -1;
-	cachedViewModel.bHasMagazineBones = false;
-	cachedViewModel.magazineRootBoneIndex = -1;
-	cachedViewModel.reloadEmptyAnimIndex = -1;
-	cachedViewModel.reloadExitEmptyAnimIndex = -1;
-	cachedViewModel.reloadFullAnimIndex = -1;
-	cachedViewModel.reloadExitFullAnimIndex = -1;
-	cachedViewModel.magazineCapacity = 0;
-	memset(cachedViewModel.magazineHideBones, 0, sizeof(cachedViewModel.magazineHideBones));
+	cachedViewModel.weaponType = WeaponType::Unknown;
 
 	Bone* boneArray = animationData->BoneArray;
-
-	for (int i = 0; i < animationData->NumAnimations; i++)
-	{
-		const char* animName = animationData->AnimationArray[i].N00000429;
-		if (!animName || !animName[0])
-		{
-			continue;
-		}
-
-		if (cachedViewModel.reloadEmptyAnimIndex < 0 && strstr(animName, "reload-empty"))
-		{
-			cachedViewModel.reloadEmptyAnimIndex = i;
-		}
-
-		if (cachedViewModel.reloadExitEmptyAnimIndex < 0
-			&& (strstr(animName, "exit-empty") || strstr(animName, "exit empty")
-				|| strstr(animName, "exit_empty") || strstr(animName, "reload-exit-empty")
-				|| strstr(animName, "reload-exit")))
-		{
-			cachedViewModel.reloadExitEmptyAnimIndex = i;
-		}
-
-		if (cachedViewModel.reloadFullAnimIndex < 0
-			&& (strstr(animName, "reload-full") || strstr(animName, "reload full")))
-		{
-			cachedViewModel.reloadFullAnimIndex = i;
-		}
-
-		if (cachedViewModel.reloadExitFullAnimIndex < 0
-			&& (strstr(animName, "exit-full") || strstr(animName, "exit full")
-				|| strstr(animName, "exit_full") || strstr(animName, "reload-exit-full")))
-		{
-			cachedViewModel.reloadExitFullAnimIndex = i;
-		}
-	}
-
-	if (cachedViewModel.reloadEmptyAnimIndex >= 0 || cachedViewModel.reloadExitEmptyAnimIndex >= 0
-		|| cachedViewModel.reloadFullAnimIndex >= 0 || cachedViewModel.reloadExitFullAnimIndex >= 0)
-	{
-		Logger::log << "[WeaponHandler] Reload anim indices: empty=" << cachedViewModel.reloadEmptyAnimIndex
-			<< " exitEmpty=" << cachedViewModel.reloadExitEmptyAnimIndex
-			<< " full=" << cachedViewModel.reloadFullAnimIndex
-			<< " exitFull=" << cachedViewModel.reloadExitFullAnimIndex << std::endl;
-	}
 
 	for (int i = 0; i < animationData->NumBones; i++)
 	{
@@ -886,97 +691,6 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 #endif
 	}
 
-	WeaponType weaponType = WeaponType::Unknown;
-	{
-		BaseDynamicObject* player = Helpers::GetLocalPlayer();
-		if (player)
-		{
-			BaseDynamicObject* weaponObj = Helpers::GetDynamicObject(player->weapon);
-			if (weaponObj)
-			{
-				Asset_Weapon* weapon = Helpers::GetTypedAsset<Asset_Weapon>(weaponObj->tagID);
-				if (weapon)
-				{
-					weaponType = GetWeaponType(weapon);
-				}
-			}
-		}
-	}
-
-	for (int i = 0; i < animationData->NumBones && i < 64; i++)
-	{
-		if (!Game::instance.weaponManualReloadConfig.IsMagazineBoneName(weaponType, boneArray[i].BoneName))
-		{
-			continue;
-		}
-
-		cachedViewModel.magazineRootBoneIndex = i;
-
-#if DRAW_DEBUG_AIM
-		Logger::log << "[UpdateCache] Found magazine bone candidate " << boneArray[i].BoneName << " @ " << i << std::endl;
-#endif
-		break;
-	}
-
-	if (cachedViewModel.magazineRootBoneIndex >= 0)
-	{
-		cachedViewModel.bHasMagazineBones = true;
-		MarkMagazineBone(cachedViewModel.magazineRootBoneIndex);
-	}
-
-	if (cachedViewModel.bHasMagazineBones)
-	{
-		const char* rootName = cachedViewModel.magazineRootBoneIndex >= 0
-			? boneArray[cachedViewModel.magazineRootBoneIndex].BoneName
-			: "unknown";
-		const WeaponManualReloadSettings& reloadSettings = Game::instance.weaponManualReloadConfig.GetSettings(weaponType);
-		const bool bShellOnlyRoot = cachedViewModel.magazineRootBoneIndex >= 0
-			&& _stricmp(rootName, reloadSettings.MagazineBoneName.c_str()) == 0
-			&& reloadSettings.ContinuousReload;
-
-		if (cachedViewModel.magazineRootBoneIndex >= 0 && !bShellOnlyRoot)
-		{
-			MarkMagazineDescendants(boneArray, animationData->NumBones, cachedViewModel.magazineRootBoneIndex);
-		}
-
-		// Also pick up any bones parented under an already-marked magazine bone.
-		if (!bShellOnlyRoot)
-		{
-			bool bMarkChanged = true;
-			while (bMarkChanged)
-			{
-				bMarkChanged = false;
-				for (int i = 0; i < animationData->NumBones && i < 64; i++)
-				{
-					if (cachedViewModel.magazineHideBones[i])
-					{
-						continue;
-					}
-
-					const int parentIndex = boneArray[i].Parent;
-					if (parentIndex >= 0 && parentIndex < 64 && cachedViewModel.magazineHideBones[parentIndex])
-					{
-						MarkMagazineBone(i);
-						bMarkChanged = true;
-					}
-				}
-			}
-		}
-
-		int markedBoneCount = 0;
-		for (int i = 0; i < 64; i++)
-		{
-			if (cachedViewModel.magazineHideBones[i])
-			{
-				markedBoneCount++;
-			}
-		}
-
-		Logger::log << "[WeaponHandler] Magazine bone cached: index "
-			<< cachedViewModel.magazineRootBoneIndex << " (\"" << rootName << "\")"
-			<< " markedBones=" << markedBoneCount << std::endl;
-	}
-
 	{
 		std::string weaponAssetPath;
 		BaseDynamicObject* player = Helpers::GetLocalPlayer();
@@ -1009,6 +723,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	if (!player)
 	{
 		Logger::log << "[UpdateCache] Can't find local player" << std::endl;
+		Game::instance.GetPhysicalReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
 		return;
 	}
 
@@ -1017,6 +732,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	{
 		Logger::log << "[UpdateCache] Can't find weapon from WeaponID " << player->weapon << std::endl;
 		Logger::log << "[UpdateCache] Player Tag = " << player->tagID << std::endl;
+		Game::instance.GetPhysicalReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
 		return;
 	}
 
@@ -1024,10 +740,12 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	if (!weapon)
 	{
 		Logger::log << "[UpdateCache] Can't find weapon asset from TagID " << weaponObj->tagID << std::endl;
+		Game::instance.GetPhysicalReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
 		return;
 	}
 
 	cachedViewModel.weaponType = GetWeaponType(weapon);
+	Game::instance.GetPhysicalReload().OnViewModelCached(id, animationData, cachedViewModel.weaponType);
 
 	if (!weapon->WeaponData)
 	{
@@ -1035,22 +753,6 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 		Logger::log << "[UpdateCache] Weapon Type = " << weapon->GroupID << std::endl;
 		Logger::log << "[UpdateCache] Weapon Path = " << weapon->WeaponAsset << std::endl;
 		return;
-	}
-
-	const WeaponManualReloadSettings& reloadSettings =
-		Game::instance.weaponManualReloadConfig.GetSettings(cachedViewModel.weaponType);
-	cachedViewModel.magazineCapacity = reloadSettings.MagazineCapacity;
-
-	if (Game::instance.c_LogPhysicalReloadDebug->Value())
-	{
-		const WeaponDynamicObject* weaponObject = static_cast<const WeaponDynamicObject*>(weaponObj);
-		const Weapon& liveWeapon = weaponObject->weaponData[0];
-
-		Logger::log << "[WeaponHandler] magazineCapacity=" << cachedViewModel.magazineCapacity
-			<< " weaponType=" << static_cast<int>(cachedViewModel.weaponType)
-			<< " ammo=" << liveWeapon.ammo
-			<< " reserveAmmo=" << liveWeapon.reserveAmmo
-			<< std::endl;
 	}
 
 	Asset_GBXModel* model = Helpers::GetTypedAsset<Asset_GBXModel>(weapon->WeaponData->ViewModelID);

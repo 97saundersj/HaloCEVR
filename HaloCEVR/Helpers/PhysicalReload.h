@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "../Maths/Matrices.h"
 #include "../Maths/Vectors.h"
+#include "../WeaponHandler.h"
 #include "Maths.h"
 #include "Objects.h"
 
@@ -15,6 +16,8 @@ enum class EPhysicalReloadPhase
 };
 
 class InputHandler;
+struct AssetData_ModelAnimations;
+struct Bone;
 
 class PhysicalReloadController
 {
@@ -35,13 +38,25 @@ public:
 	bool ShouldBlockAutoReloadStart() const;
 	void OnPreHandleInputs();
 
-	// WeaponHandler
-	void OnWeaponChanged();
+	// WeaponHandler — cache reload metadata when the view-model asset changes.
+	void OnViewModelCached(const HaloID& id, AssetData_ModelAnimations* animationData, WeaponType weaponType);
 	void PreSkeleton(const HaloID& id, TransformQuat* boneTransforms);
 	void PostSkeleton(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, Transform* outBoneTransforms);
 
 private:
 	InputHandler& input;
+
+	// View-model reload metadata (owned here, not on WeaponHandler).
+	HaloID cachedViewModelAsset{ 0, 0 };
+	WeaponType cachedWeaponType = WeaponType::Unknown;
+	bool magazineHideBones[64]{};
+	bool bHasMagazineBones = false;
+	int magazineRootBoneIndex = -1;
+	int reloadEmptyAnimIndex = -1;
+	int reloadExitEmptyAnimIndex = -1;
+	int reloadFullAnimIndex = -1;
+	int reloadExitFullAnimIndex = -1;
+	uint16_t magazineCapacity = 0;
 
 	EPhysicalReloadPhase phase = EPhysicalReloadPhase::Idle;
 	bool bMagazineEjected = false;
@@ -88,11 +103,22 @@ private:
 	void ResetCycle();
 	void ResetCycleCore();
 	void EndShotgunShellSession();
+	void ClearReloadMetadata();
+	void CacheReloadMetadata(const HaloID& id, AssetData_ModelAnimations* animationData, WeaponType weaponType);
+	void MarkMagazineBone(int boneIndex);
+	void MarkMagazineDescendants(Bone* boneArray, int numBones, int rootIndex);
 
+	bool HasMagazineBones() const { return bHasMagazineBones; }
+	bool IsMagazineBone(int boneIndex) const;
+	int GetMagazineRootBoneIndex() const;
+	bool IsLocalMagazineEmpty() const;
+	bool IsShellByShellReloadWeapon() const;
+	bool CanLoadAnotherShell() const;
 	bool ShouldContinueContinuousReloadSession() const;
 	bool ShouldAutoStartContinuousReloadSession() const;
 	bool ShouldShowBeltMagazine() const;
 	int GetActiveReloadAnimIndex() const;
+	bool IsLocalViewModel(const HaloID& id) const;
 
 	void TriggerWeaponReload();
 	void TriggerWeaponReloadEnd();
