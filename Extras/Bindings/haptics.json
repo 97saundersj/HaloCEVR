@@ -3,7 +3,7 @@
   "PlasmaPistol": {
     "RampUpTicks": 45
   },
-  "PhysicalReloadInsert": {
+  "ManualReloadInsert": {
     "StartSecondsDelay": 0,
     "DurationSeconds": 0.06,
     "Frequency": 120,

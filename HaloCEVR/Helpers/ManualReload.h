@@ -7,7 +7,7 @@
 #include "Maths.h"
 #include "Objects.h"
 
-enum class EPhysicalReloadPhase
+enum class EManualReloadPhase
 {
 	Idle,
 	PlayingEject,
@@ -19,10 +19,10 @@ class InputHandler;
 struct AssetData_ModelAnimations;
 struct Bone;
 
-class PhysicalReloadController
+class ManualReloadController
 {
 public:
-	explicit PhysicalReloadController(InputHandler& inputHandler);
+	explicit ManualReloadController(InputHandler& inputHandler);
 
 	// InputHandler
 	void Update();
@@ -58,11 +58,11 @@ private:
 	int reloadExitFullAnimIndex = -1;
 	uint16_t magazineCapacity = 0;
 
-	EPhysicalReloadPhase phase = EPhysicalReloadPhase::Idle;
+	EManualReloadPhase phase = EManualReloadPhase::Idle;
 	bool bMagazineEjected = false;
 	bool bMagazineGrabbed = false;
-	bool bManualPhysicalReloadPending = false;
-	bool bPhysicalReloadFromEmpty = false;
+	bool bManualReloadPending = false;
+	bool bManualReloadFromEmpty = false;
 	bool bShotgunShellSessionActive = false;
 	bool bShotgunShellSessionUserCancelled = false;
 	uint16_t pausedReloadAnimIndex = 0;
@@ -122,10 +122,10 @@ private:
 
 	void TriggerWeaponReload();
 	void TriggerWeaponReloadEnd();
-	void BeginPhysicalReload();
+	void BeginManualReload();
 	void BeginChainedShellReload();
-	void ResumePhysicalReloadAnimation();
-	void HandlePhysicalMagazineGrabInsert();
+	void ResumeManualReloadAnimation();
+	void HandleManualMagazineGrabInsert();
 	void TryBeginShotgunLoadFromBelt();
 	void SuspendShotgunActiveReloadForFire();
 	bool ShouldSuspendShotgunActiveReloadForFire() const;

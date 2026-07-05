@@ -4,6 +4,8 @@
 #include "Helpers/Camera.h"
 #include "Helpers/Menus.h"
 #include "Helpers/Maths.h"
+
+
 #define RegisterBoolInput(set, x) x = vr->RegisterBoolInput(set, #x);
 #define RegisterVector2Input(set, x) x = vr->RegisterVector2Input(set, #x);
 #define ApplyBoolInput(x) controls.##x = vr->GetBoolInput(x) ? 127 : 0;
@@ -89,7 +91,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
-		Game::instance.GetPhysicalReload().SuppressVanillaReloadControl(controls.Reload);
+		Game::instance.GetManualReload().SuppressVanillaReloadControl(controls.Reload);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
@@ -109,7 +111,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
-		Game::instance.GetPhysicalReload().SuppressVanillaReloadControl(controls.Reload);
+		Game::instance.GetManualReload().SuppressVanillaReloadControl(controls.Reload);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
@@ -247,7 +249,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		SendInput(1, &input, sizeof(INPUT));
 	}
 
-	Game::instance.GetPhysicalReload().Update();
+	Game::instance.GetManualReload().Update();
 
 	UpdateHandsProximity();
 
@@ -624,7 +626,7 @@ void InputHandler::CalculateSmoothedInput()
 
 void InputHandler::UpdateHandsProximity()
 {
-	Game::instance.GetPhysicalReload().TickSwapSuppression();
+	Game::instance.GetManualReload().TickSwapSuppression();
 
 	float swapHandDistance = Game::instance.c_SwapHandDistance->Value();
 	
@@ -644,7 +646,7 @@ void InputHandler::UpdateHandsProximity()
 
 void InputHandler::CheckSwapWeaponHand()
 {
-	if (Game::instance.GetPhysicalReload().ShouldSkipWeaponHandSwap())
+	if (Game::instance.GetManualReload().ShouldSkipWeaponHandSwap())
 	{
 		return;
 	}
@@ -687,8 +689,8 @@ void InputHandler::UpdateTwoHandedHold(float handDistance, bool handsWithinSwapW
 		return;
 	}
 
-	// Off-hand grip is used to grab the ejected magazine during physical reload.
-	if (Game::instance.GetPhysicalReload().ShouldSuppressTwoHandAim())
+	// Off-hand grip is used to grab the ejected magazine during manual reload.
+	if (Game::instance.GetManualReload().ShouldSuppressTwoHandAim())
 	{
 		Game::instance.bUseTwoHandAim = false;
 		return;

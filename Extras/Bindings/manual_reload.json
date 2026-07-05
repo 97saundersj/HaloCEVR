@@ -1,23 +1,19 @@
 {
   "ReloadOnChange": true,
-  "Defaults": {
-    "PauseTicks": 10,
-    "ResumeTicks": 30,
-    "MagazineBoneName": "frame magazine",
-    "ContinuousReload": false
-  },
   "Weapons": [
     {
       "Weapon": 1,
       "Description": "Pistol",
       "PauseTicks": 25,
-      "ResumeTicks": 35
+      "ResumeTicks": 35,
+      "MagazineBoneName": "frame magazine"
     },
     {
       "Weapon": 2,
       "Description": "AssaultRifle",
       "PauseTicks": 35,
-      "ResumeTicks": 45
+      "ResumeTicks": 45,
+      "MagazineBoneName": "frame magazine"
     },
     {
       "Weapon": 3,
@@ -39,7 +35,8 @@
       "Weapon": 5,
       "Description": "Sniper",
       "PauseTicks": 30,
-      "ResumeTicks": 45
+      "ResumeTicks": 45,
+      "MagazineBoneName": "frame magazine"
     }
   ]
 }

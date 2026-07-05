@@ -1,4 +1,4 @@
-#include "PhysicalReload.h"
+#include "ManualReload.h"
 #include "../InputHandler.h"
 #include "../Game.h"
 #include "Camera.h"
@@ -43,7 +43,7 @@ WeaponDynamicObject* GetLocalWeaponObject()
 	return static_cast<WeaponDynamicObject*>(Helpers::GetDynamicObject(player->weapon));
 }
 
-bool ShouldPausePhysicalReload(uint16_t initialRemaining, uint16_t currentRemaining, int pauseTicks)
+bool ShouldPauseManualReload(uint16_t initialRemaining, uint16_t currentRemaining, int pauseTicks)
 {
 	if (pauseTicks <= 0 || initialRemaining <= currentRemaining)
 	{
@@ -141,25 +141,25 @@ void EvaluateAnimPose(
 
 bool IsDebugLogging()
 {
-	return G().c_LogPhysicalReloadDebug && G().c_LogPhysicalReloadDebug->Value();
+	return G().c_LogManualReloadDebug && G().c_LogManualReloadDebug->Value();
 }
 }
 
-PhysicalReloadController::PhysicalReloadController(InputHandler& inputHandler)
+ManualReloadController::ManualReloadController(InputHandler& inputHandler)
 	: input(inputHandler)
 {
 	gripFromWristLocal.identity();
 }
 
-void PhysicalReloadController::BeginSoundCapture()
+void ManualReloadController::BeginSoundCapture()
 {
 	Helpers::BeginActiveSoundCapture();
 }
 
-void PhysicalReloadController::PauseSounds()
+void ManualReloadController::PauseSounds()
 {
-	float stopDelaySeconds = G().c_PhysicalReloadSoundStopDelay
-		? G().c_PhysicalReloadSoundStopDelay->Value()
+	float stopDelaySeconds = G().c_ManualReloadSoundStopDelay
+		? G().c_ManualReloadSoundStopDelay->Value()
 		: 0.0f;
 	if (stopDelaySeconds < 0.0f)
 	{
@@ -168,17 +168,17 @@ void PhysicalReloadController::PauseSounds()
 	Helpers::PauseActiveSounds(static_cast<unsigned int>(stopDelaySeconds * 1000.0f), IsDebugLogging());
 }
 
-void PhysicalReloadController::ClearSounds()
+void ManualReloadController::ClearSounds()
 {
 	Helpers::ClearActiveSounds(IsDebugLogging());
 }
 
-void PhysicalReloadController::ResumeSounds(bool bStopActiveSources)
+void ManualReloadController::ResumeSounds(bool bStopActiveSources)
 {
 	Helpers::ResumeActiveSounds(bStopActiveSources, IsDebugLogging());
 }
 
-void PhysicalReloadController::SuppressVanillaReloadControl(unsigned char& reloadControl) const
+void ManualReloadController::SuppressVanillaReloadControl(unsigned char& reloadControl) const
 {
 	if (!G().c_DisableEmptyMagazineAutoReload->Value())
 	{
@@ -193,7 +193,7 @@ void PhysicalReloadController::SuppressVanillaReloadControl(unsigned char& reloa
 	reloadControl = 0;
 }
 
-bool PhysicalReloadController::ShouldBlockAutoReloadStart() const
+bool ManualReloadController::ShouldBlockAutoReloadStart() const
 {
 	if (!G().c_DisableEmptyMagazineAutoReload->Value())
 	{
@@ -206,15 +206,15 @@ bool PhysicalReloadController::ShouldBlockAutoReloadStart() const
 		return !vr->GetBoolInput(input.GetReloadInput());
 	}
 
-	return !bManualPhysicalReloadPending;
+	return !bManualReloadPending;
 }
 
-void PhysicalReloadController::ClearBoneSnapshot()
+void ManualReloadController::ClearBoneSnapshot()
 {
 	bHasPausedBoneSnapshot = false;
 }
 
-void PhysicalReloadController::ResetBonePinState()
+void ManualReloadController::ResetBonePinState()
 {
 	ClearBoneSnapshot();
 	reloadReplayCount = 0;
@@ -230,7 +230,7 @@ void PhysicalReloadController::ResetBonePinState()
 	gripFromWristLocal.identity();
 }
 
-void PhysicalReloadController::ClearReloadStartInsertSocket()
+void ManualReloadController::ClearReloadStartInsertSocket()
 {
 	bHasReloadStartMagSocket = false;
 	reloadStartMagLocalOffset = Vector3(0.0f, 0.0f, 0.0f);
@@ -239,12 +239,12 @@ void PhysicalReloadController::ClearReloadStartInsertSocket()
 	gripFromWristLocal.identity();
 }
 
-void PhysicalReloadController::ResetCycleCore()
+void ManualReloadController::ResetCycleCore()
 {
 	ResumeSounds(false);
-	phase = EPhysicalReloadPhase::Idle;
-	bManualPhysicalReloadPending = false;
-	bPhysicalReloadFromEmpty = false;
+	phase = EManualReloadPhase::Idle;
+	bManualReloadPending = false;
+	bManualReloadFromEmpty = false;
 	bMagazineEjected = false;
 	bMagazineGrabbed = false;
 	pausedReloadAnimIndex = 0;
@@ -258,26 +258,26 @@ void PhysicalReloadController::ResetCycleCore()
 	}
 }
 
-void PhysicalReloadController::ResetState()
+void ManualReloadController::ResetState()
 {
 	bBeltGripStartedReload = false;
 	bShotgunShellSessionActive = false;
 	ResetCycleCore();
 }
 
-void PhysicalReloadController::ResetCycle()
+void ManualReloadController::ResetCycle()
 {
 	bBeltGripStartedReload = false;
 	ResetCycleCore();
 }
 
-void PhysicalReloadController::EndShotgunShellSession()
+void ManualReloadController::EndShotgunShellSession()
 {
 	bShotgunShellSessionActive = false;
 	ResetCycleCore();
 }
 
-void PhysicalReloadController::ClearReloadMetadata()
+void ManualReloadController::ClearReloadMetadata()
 {
 	cachedViewModelAsset = HaloID{ 0, 0 };
 	cachedWeaponType = WeaponType::Unknown;
@@ -291,7 +291,7 @@ void PhysicalReloadController::ClearReloadMetadata()
 	memset(magazineHideBones, 0, sizeof(magazineHideBones));
 }
 
-void PhysicalReloadController::MarkMagazineBone(int boneIndex)
+void ManualReloadController::MarkMagazineBone(int boneIndex)
 {
 	if (boneIndex >= 0 && boneIndex < 64)
 	{
@@ -299,7 +299,7 @@ void PhysicalReloadController::MarkMagazineBone(int boneIndex)
 	}
 }
 
-void PhysicalReloadController::MarkMagazineDescendants(Bone* boneArray, int numBones, int rootIndex)
+void ManualReloadController::MarkMagazineDescendants(Bone* boneArray, int numBones, int rootIndex)
 {
 	if (!boneArray || rootIndex < 0 || rootIndex >= numBones)
 	{
@@ -330,7 +330,7 @@ void PhysicalReloadController::MarkMagazineDescendants(Bone* boneArray, int numB
 	}
 }
 
-void PhysicalReloadController::CacheReloadMetadata(
+void ManualReloadController::CacheReloadMetadata(
 	const HaloID& id,
 	AssetData_ModelAnimations* animationData,
 	WeaponType weaponType)
@@ -385,7 +385,7 @@ void PhysicalReloadController::CacheReloadMetadata(
 	if (reloadEmptyAnimIndex >= 0 || reloadExitEmptyAnimIndex >= 0
 		|| reloadFullAnimIndex >= 0 || reloadExitFullAnimIndex >= 0)
 	{
-		Logger::log << "[PhysicalReload] Reload anim indices: empty=" << reloadEmptyAnimIndex
+		Logger::log << "[ManualReload] Reload anim indices: empty=" << reloadEmptyAnimIndex
 			<< " exitEmpty=" << reloadExitEmptyAnimIndex
 			<< " full=" << reloadFullAnimIndex
 			<< " exitFull=" << reloadExitFullAnimIndex << std::endl;
@@ -449,7 +449,7 @@ void PhysicalReloadController::CacheReloadMetadata(
 		}
 	}
 
-	Logger::log << "[PhysicalReload] Magazine bone cached: index "
+	Logger::log << "[ManualReload] Magazine bone cached: index "
 		<< magazineRootBoneIndex << " (\"" << rootName << "\")"
 		<< " markedBones=" << markedBoneCount << std::endl;
 
@@ -459,7 +459,7 @@ void PhysicalReloadController::CacheReloadMetadata(
 		if (weaponObject)
 		{
 			const Weapon& liveWeapon = weaponObject->weaponData[0];
-			Logger::log << "[PhysicalReload] magazineCapacity=" << magazineCapacity
+			Logger::log << "[ManualReload] magazineCapacity=" << magazineCapacity
 				<< " weaponType=" << static_cast<int>(cachedWeaponType)
 				<< " ammo=" << liveWeapon.ammo
 				<< " reserveAmmo=" << liveWeapon.reserveAmmo
@@ -468,7 +468,7 @@ void PhysicalReloadController::CacheReloadMetadata(
 	}
 }
 
-void PhysicalReloadController::OnViewModelCached(
+void ManualReloadController::OnViewModelCached(
 	const HaloID& id,
 	AssetData_ModelAnimations* animationData,
 	WeaponType weaponType)
@@ -478,12 +478,12 @@ void PhysicalReloadController::OnViewModelCached(
 	CacheReloadMetadata(id, animationData, weaponType);
 }
 
-bool PhysicalReloadController::IsMagazineBone(int boneIndex) const
+bool ManualReloadController::IsMagazineBone(int boneIndex) const
 {
 	return boneIndex >= 0 && boneIndex < 64 && magazineHideBones[boneIndex];
 }
 
-int PhysicalReloadController::GetMagazineRootBoneIndex() const
+int ManualReloadController::GetMagazineRootBoneIndex() const
 {
 	if (magazineRootBoneIndex >= 0)
 	{
@@ -501,18 +501,18 @@ int PhysicalReloadController::GetMagazineRootBoneIndex() const
 	return -1;
 }
 
-bool PhysicalReloadController::IsLocalMagazineEmpty() const
+bool ManualReloadController::IsLocalMagazineEmpty() const
 {
 	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
 	return weaponObject && weaponObject->weaponData[0].ammo == 0;
 }
 
-bool PhysicalReloadController::IsShellByShellReloadWeapon() const
+bool ManualReloadController::IsShellByShellReloadWeapon() const
 {
 	return ReloadSettings(cachedWeaponType).ContinuousReload;
 }
 
-bool PhysicalReloadController::CanLoadAnotherShell() const
+bool ManualReloadController::CanLoadAnotherShell() const
 {
 	if (!IsShellByShellReloadWeapon() || magazineCapacity == 0)
 	{
@@ -529,12 +529,12 @@ bool PhysicalReloadController::CanLoadAnotherShell() const
 	return weapon.reserveAmmo > 0 && weapon.ammo < magazineCapacity;
 }
 
-bool PhysicalReloadController::IsLocalViewModel(const HaloID& id) const
+bool ManualReloadController::IsLocalViewModel(const HaloID& id) const
 {
 	return cachedViewModelAsset == id && WH().GetRightWristIndex() >= 0;
 }
 
-bool PhysicalReloadController::ShouldContinueContinuousReloadSession() const
+bool ManualReloadController::ShouldContinueContinuousReloadSession() const
 {
 	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	return bShotgunShellSessionActive
@@ -543,18 +543,18 @@ bool PhysicalReloadController::ShouldContinueContinuousReloadSession() const
 		&& CanLoadAnotherShell();
 }
 
-bool PhysicalReloadController::ShouldAutoStartContinuousReloadSession() const
+bool ManualReloadController::ShouldAutoStartContinuousReloadSession() const
 {
 	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	return settings.ContinuousReload
 		&& !bShotgunShellSessionUserCancelled
 		&& IsShellByShellReloadWeapon()
 		&& CanLoadAnotherShell()
-		&& phase == EPhysicalReloadPhase::Idle
+		&& phase == EManualReloadPhase::Idle
 		&& !G().bIsReloading;
 }
 
-bool PhysicalReloadController::ShouldShowBeltMagazine() const
+bool ManualReloadController::ShouldShowBeltMagazine() const
 {
 	if (!HasMagazineBones() || G().bUse3DOFAiming)
 	{
@@ -563,7 +563,7 @@ bool PhysicalReloadController::ShouldShowBeltMagazine() const
 
 	if (IsShellByShellReloadWeapon()
 		&& bShotgunShellSessionActive
-		&& phase == EPhysicalReloadPhase::Idle
+		&& phase == EManualReloadPhase::Idle
 		&& CanLoadAnotherShell())
 	{
 		return true;
@@ -572,10 +572,10 @@ bool PhysicalReloadController::ShouldShowBeltMagazine() const
 	return bMagazineEjected;
 }
 
-int PhysicalReloadController::GetActiveReloadAnimIndex() const
+int ManualReloadController::GetActiveReloadAnimIndex() const
 {
 	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
-	if (bPhysicalReloadFromEmpty || settings.ContinuousReload)
+	if (bManualReloadFromEmpty || settings.ContinuousReload)
 	{
 		return reloadEmptyAnimIndex >= 0 ? reloadEmptyAnimIndex : reloadExitEmptyAnimIndex;
 	}
@@ -583,7 +583,7 @@ int PhysicalReloadController::GetActiveReloadAnimIndex() const
 	return reloadFullAnimIndex >= 0 ? reloadFullAnimIndex : reloadExitFullAnimIndex;
 }
 
-void PhysicalReloadController::TriggerWeaponReload()
+void ManualReloadController::TriggerWeaponReload()
 {
 	BaseDynamicObject* player = Helpers::GetLocalPlayer();
 	if (!player || player->weapon.id == 0xffff)
@@ -595,7 +595,7 @@ void PhysicalReloadController::TriggerWeaponReload()
 	G().ReloadStart(player->weapon, 0, true);
 }
 
-void PhysicalReloadController::TriggerWeaponReloadEnd()
+void ManualReloadController::TriggerWeaponReloadEnd()
 {
 	BaseDynamicObject* player = Helpers::GetLocalPlayer();
 	if (!player || player->weapon.id == 0xffff)
@@ -606,13 +606,13 @@ void PhysicalReloadController::TriggerWeaponReloadEnd()
 	Hooks::CallReloadEnd(0, player->weapon);
 }
 
-void PhysicalReloadController::OnReloadEnd()
+void ManualReloadController::OnReloadEnd()
 {
 	const bool bPreserveChainedReload = ShouldContinueContinuousReloadSession()
-		&& phase != EPhysicalReloadPhase::Idle
-		&& phase != EPhysicalReloadPhase::PlayingFinish;
+		&& phase != EManualReloadPhase::Idle
+		&& phase != EManualReloadPhase::PlayingFinish;
 
-	if (phase == EPhysicalReloadPhase::PlayingFinish && ShouldContinueContinuousReloadSession())
+	if (phase == EManualReloadPhase::PlayingFinish && ShouldContinueContinuousReloadSession())
 	{
 		G().bIsReloading = false;
 		return;
@@ -625,7 +625,7 @@ void PhysicalReloadController::OnReloadEnd()
 
 	G().bIsReloading = false;
 
-	if (ShouldContinueContinuousReloadSession() && phase == EPhysicalReloadPhase::Idle)
+	if (ShouldContinueContinuousReloadSession() && phase == EManualReloadPhase::Idle)
 	{
 		ResetCycle();
 		return;
@@ -634,7 +634,7 @@ void PhysicalReloadController::OnReloadEnd()
 	ResetState();
 }
 
-Vector3 PhysicalReloadController::GetBeltMagazineWorldPosition() const
+Vector3 ManualReloadController::GetBeltMagazineWorldPosition() const
 {
 	Vector3 beltPos = Helpers::GetCamera().position;
 	beltPos.z -= G().c_BeltMagazineHipDrop->Value();
@@ -662,7 +662,7 @@ Vector3 PhysicalReloadController::GetBeltMagazineWorldPosition() const
 	return beltPos;
 }
 
-Vector3 PhysicalReloadController::GetOffHandWorldPosition() const
+Vector3 ManualReloadController::GetOffHandWorldPosition() const
 {
 	const ControllerRole offHand = G().bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
 	Matrix4 offHandTransform = G().GetVR()->GetControllerTransform(offHand, true);
@@ -672,7 +672,7 @@ Vector3 PhysicalReloadController::GetOffHandWorldPosition() const
 	return handPos;
 }
 
-Vector3 PhysicalReloadController::GetMagazineGripWorldOffset() const
+Vector3 ManualReloadController::GetMagazineGripWorldOffset() const
 {
 	const ControllerRole offHand = G().bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
 	Matrix4 offHandTransform = G().GetVR()->GetControllerTransform(offHand, true);
@@ -686,7 +686,7 @@ Vector3 PhysicalReloadController::GetMagazineGripWorldOffset() const
 	return worldOffset;
 }
 
-bool PhysicalReloadController::GetOffHandNearBelt(bool& gripHeld, bool& gripChanged) const
+bool ManualReloadController::GetOffHandNearBelt(bool& gripHeld, bool& gripChanged) const
 {
 	IVR* vr = G().GetVR();
 	const Vector3 offHandPos = GetOffHandWorldPosition();
@@ -699,14 +699,14 @@ bool PhysicalReloadController::GetOffHandNearBelt(bool& gripHeld, bool& gripChan
 	return (offHandPos - beltPos).lengthSqr() < grabDistanceSqr;
 }
 
-bool PhysicalReloadController::ShouldSuppressTwoHandAim() const
+bool ManualReloadController::ShouldSuppressTwoHandAim() const
 {
 	if (!G().c_DisableEmptyMagazineAutoReload->Value())
 	{
 		return false;
 	}
 
-	if (bMagazineEjected || bMagazineGrabbed || phase != EPhysicalReloadPhase::Idle)
+	if (bMagazineEjected || bMagazineGrabbed || phase != EManualReloadPhase::Idle)
 	{
 		return true;
 	}
@@ -716,7 +716,7 @@ bool PhysicalReloadController::ShouldSuppressTwoHandAim() const
 	return ShouldShowBeltMagazine() && GetOffHandNearBelt(gripHeld, gripChanged);
 }
 
-bool PhysicalReloadController::ShouldSkipWeaponHandSwap() const
+bool ManualReloadController::ShouldSkipWeaponHandSwap() const
 {
 	if (bSuppressSwapUntilGripRelease)
 	{
@@ -728,13 +728,13 @@ bool PhysicalReloadController::ShouldSkipWeaponHandSwap() const
 		return false;
 	}
 
-	return phase != EPhysicalReloadPhase::Idle
+	return phase != EManualReloadPhase::Idle
 		|| bMagazineEjected
 		|| bMagazineGrabbed
 		|| G().bIsReloading;
 }
 
-void PhysicalReloadController::TickSwapSuppression()
+void ManualReloadController::TickSwapSuppression()
 {
 	if (!bSuppressSwapUntilGripRelease)
 	{
@@ -749,12 +749,12 @@ void PhysicalReloadController::TickSwapSuppression()
 	}
 }
 
-bool PhysicalReloadController::ShouldSuspendShotgunActiveReloadForFire() const
+bool ManualReloadController::ShouldSuspendShotgunActiveReloadForFire() const
 {
 	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	if (!settings.ContinuousReload
 		|| !bShotgunShellSessionActive
-		|| phase != EPhysicalReloadPhase::PausedAtEject)
+		|| phase != EManualReloadPhase::PausedAtEject)
 	{
 		return false;
 	}
@@ -768,7 +768,7 @@ bool PhysicalReloadController::ShouldSuspendShotgunActiveReloadForFire() const
 	return G().GetVR()->GetBoolInput(input.GetFireInput());
 }
 
-void PhysicalReloadController::SuspendShotgunActiveReloadForFire()
+void ManualReloadController::SuspendShotgunActiveReloadForFire()
 {
 	ResetCycleCore();
 
@@ -782,7 +782,7 @@ void PhysicalReloadController::SuspendShotgunActiveReloadForFire()
 	ResumeSounds(false);
 }
 
-void PhysicalReloadController::OnPreHandleInputs()
+void ManualReloadController::OnPreHandleInputs()
 {
 	if (!ShouldSuspendShotgunActiveReloadForFire())
 	{
@@ -792,12 +792,12 @@ void PhysicalReloadController::OnPreHandleInputs()
 	SuspendShotgunActiveReloadForFire();
 }
 
-void PhysicalReloadController::TryBeginShotgunLoadFromBelt()
+void ManualReloadController::TryBeginShotgunLoadFromBelt()
 {
 	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	if (!settings.ContinuousReload
 		|| !bShotgunShellSessionActive
-		|| phase != EPhysicalReloadPhase::Idle
+		|| phase != EManualReloadPhase::Idle
 		|| !ShouldContinueContinuousReloadSession())
 	{
 		return;
@@ -812,9 +812,9 @@ void PhysicalReloadController::TryBeginShotgunLoadFromBelt()
 	}
 }
 
-void PhysicalReloadController::ApplyAnimPin()
+void ManualReloadController::ApplyAnimPin()
 {
-	if (phase != EPhysicalReloadPhase::PausedAtEject)
+	if (phase != EManualReloadPhase::PausedAtEject)
 	{
 		return;
 	}
@@ -862,11 +862,11 @@ void PhysicalReloadController::ApplyAnimPin()
 	}
 }
 
-void PhysicalReloadController::UpdateReloadAnimationPause()
+void ManualReloadController::UpdateReloadAnimationPause()
 {
-	if (phase != EPhysicalReloadPhase::PlayingEject
-		&& phase != EPhysicalReloadPhase::PausedAtEject
-		&& phase != EPhysicalReloadPhase::PlayingFinish)
+	if (phase != EManualReloadPhase::PlayingEject
+		&& phase != EManualReloadPhase::PausedAtEject
+		&& phase != EManualReloadPhase::PlayingFinish)
 	{
 		return;
 	}
@@ -878,10 +878,10 @@ void PhysicalReloadController::UpdateReloadAnimationPause()
 		return;
 	}
 
-	if (G().c_LogPhysicalReloadFrames && G().c_LogPhysicalReloadFrames->Value()
-		&& (G().bIsReloading || phase != EPhysicalReloadPhase::Idle))
+	if (G().c_LogManualReloadFrames && G().c_LogManualReloadFrames->Value()
+		&& (G().bIsReloading || phase != EManualReloadPhase::Idle))
 	{
-		static EPhysicalReloadPhase lastLoggedPhase = EPhysicalReloadPhase::Idle;
+		static EManualReloadPhase lastLoggedPhase = EManualReloadPhase::Idle;
 		static int logFrameCounter = 0;
 		const bool phaseChanged = phase != lastLoggedPhase;
 		if (phaseChanged)
@@ -895,14 +895,14 @@ void PhysicalReloadController::UpdateReloadAnimationPause()
 		}
 
 		if (phaseChanged
-			|| phase == EPhysicalReloadPhase::PlayingEject
-			|| (phase == EPhysicalReloadPhase::PausedAtEject && logFrameCounter % 30 == 0)
-			|| phase == EPhysicalReloadPhase::PlayingFinish)
+			|| phase == EManualReloadPhase::PlayingEject
+			|| (phase == EManualReloadPhase::PausedAtEject && logFrameCounter % 30 == 0)
+			|| phase == EManualReloadPhase::PlayingFinish)
 		{
 			const uint16_t reloadElapsed = initialReloadRemaining > weaponObject->weaponData[0].reloadRemaining
 				? initialReloadRemaining - weaponObject->weaponData[0].reloadRemaining
 				: 0;
-			Logger::log << "[PhysicalReload] weapon=" << static_cast<int>(cachedWeaponType)
+			Logger::log << "[ManualReload] weapon=" << static_cast<int>(cachedWeaponType)
 				<< " phase=" << static_cast<int>(phase)
 				<< " pauseTicks=" << ReloadSettings(cachedWeaponType).PauseTicks
 				<< " resumeTicks=" << ReloadSettings(cachedWeaponType).ResumeTicks
@@ -918,7 +918,7 @@ void PhysicalReloadController::UpdateReloadAnimationPause()
 		}
 	}
 
-	if (phase == EPhysicalReloadPhase::PlayingEject)
+	if (phase == EManualReloadPhase::PlayingEject)
 	{
 		if (!G().bIsReloading)
 		{
@@ -934,14 +934,14 @@ void PhysicalReloadController::UpdateReloadAnimationPause()
 		const int pauseTicks = ReloadSettings(cachedWeaponType).PauseTicks;
 		const int reloadAnimIndex = GetActiveReloadAnimIndex();
 
-		if (ShouldPausePhysicalReload(initialReloadRemaining, weaponObject->weaponData[0].reloadRemaining, pauseTicks))
+		if (ShouldPauseManualReload(initialReloadRemaining, weaponObject->weaponData[0].reloadRemaining, pauseTicks))
 		{
 			pausedReloadAnimIndex = reloadAnimIndex >= 0
 				? static_cast<uint16_t>(reloadAnimIndex)
 				: Helpers::GetFirstPersonBaseAnimId();
 			pausedReloadAnimFrame = static_cast<uint16_t>(pauseTicks);
 			frozenReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
-			phase = EPhysicalReloadPhase::PausedAtEject;
+			phase = EManualReloadPhase::PausedAtEject;
 			bMagazineEjected = true;
 			ResetBonePinState();
 
@@ -960,19 +960,19 @@ void PhysicalReloadController::UpdateReloadAnimationPause()
 			if (IsDebugLogging())
 			{
 				const Vector3 beltPos = GetBeltMagazineWorldPosition();
-				Logger::log << "[PhysicalReload] paused at eject pauseTicks=" << pauseTicks
+				Logger::log << "[ManualReload] paused at eject pauseTicks=" << pauseTicks
 					<< " beltPos=(" << beltPos.x << "," << beltPos.y << "," << beltPos.z << ")"
 					<< std::endl;
 			}
 			PauseSounds();
 		}
 	}
-	else if (phase == EPhysicalReloadPhase::PausedAtEject)
+	else if (phase == EManualReloadPhase::PausedAtEject)
 	{
 		ApplyAnimPin();
 		PauseSounds();
 	}
-	else if (phase == EPhysicalReloadPhase::PlayingFinish)
+	else if (phase == EManualReloadPhase::PlayingFinish)
 	{
 		Weapon& weapon = weaponObject->weaponData[0];
 		finishFrameCounter++;
@@ -1002,7 +1002,7 @@ void PhysicalReloadController::UpdateReloadAnimationPause()
 	}
 }
 
-void PhysicalReloadController::BeginPhysicalReload()
+void ManualReloadController::BeginManualReload()
 {
 	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
 	if (settings.ContinuousReload)
@@ -1013,20 +1013,20 @@ void PhysicalReloadController::BeginPhysicalReload()
 	BeginChainedShellReload();
 }
 
-void PhysicalReloadController::BeginChainedShellReload()
+void ManualReloadController::BeginChainedShellReload()
 {
-	if (phase != EPhysicalReloadPhase::Idle)
+	if (phase != EManualReloadPhase::Idle)
 	{
 		return;
 	}
 
-	bPhysicalReloadFromEmpty = IsLocalMagazineEmpty();
-	bManualPhysicalReloadPending = true;
-	phase = EPhysicalReloadPhase::PlayingEject;
+	bManualReloadFromEmpty = IsLocalMagazineEmpty();
+	bManualReloadPending = true;
+	phase = EManualReloadPhase::PlayingEject;
 	initialReloadRemaining = 0;
 	BeginSoundCapture();
 	TriggerWeaponReload();
-	bManualPhysicalReloadPending = false;
+	bManualReloadPending = false;
 
 	if (!G().bIsReloading)
 	{
@@ -1044,7 +1044,7 @@ void PhysicalReloadController::BeginChainedShellReload()
 	initialReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
 }
 
-void PhysicalReloadController::ResumePhysicalReloadAnimation()
+void ManualReloadController::ResumeManualReloadAnimation()
 {
 	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
 	if (!weaponObject)
@@ -1056,7 +1056,7 @@ void PhysicalReloadController::ResumePhysicalReloadAnimation()
 	const ControllerRole offHand = G().bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
 	WeaponHapticsConfigManager& hapticsConfig = G().weaponHapticsConfig;
 	hapticsConfig.LoadConfig();
-	hapticsConfig.HandleWeaponHaptics(G().GetVR(), offHand, hapticsConfig.physicalReloadInsert);
+	hapticsConfig.HandleWeaponHaptics(G().GetVR(), offHand, hapticsConfig.manualReloadInsert);
 
 	const int pauseTicks = ReloadSettings(cachedWeaponType).PauseTicks;
 	const int resumeTicks = ReloadSettings(cachedWeaponType).ResumeTicks;
@@ -1075,7 +1075,7 @@ void PhysicalReloadController::ResumePhysicalReloadAnimation()
 
 	ClearSounds();
 
-	phase = EPhysicalReloadPhase::PlayingFinish;
+	phase = EManualReloadPhase::PlayingFinish;
 	finishFrameCounter = 0;
 	bMagazineGrabbed = false;
 	bMagazineEjected = false;
@@ -1083,13 +1083,13 @@ void PhysicalReloadController::ResumePhysicalReloadAnimation()
 
 	if (IsDebugLogging())
 	{
-		Logger::log << "[PhysicalReload] resume skipTicks=" << skipTicks
+		Logger::log << "[ManualReload] resume skipTicks=" << skipTicks
 			<< " replay=" << (reloadReplayCount > 1 ? "yes" : "no")
 			<< std::endl;
 	}
 }
 
-void PhysicalReloadController::HandlePhysicalMagazineGrabInsert()
+void ManualReloadController::HandleManualMagazineGrabInsert()
 {
 	const Vector3 offHandPos = GetOffHandWorldPosition();
 	const Vector3 beltPos = GetBeltMagazineWorldPosition();
@@ -1115,7 +1115,7 @@ void PhysicalReloadController::HandlePhysicalMagazineGrabInsert()
 	}
 	else if (offHandNearSocket)
 	{
-		ResumePhysicalReloadAnimation();
+		ResumeManualReloadAnimation();
 	}
 	else if (!gripHeld)
 	{
@@ -1123,13 +1123,13 @@ void PhysicalReloadController::HandlePhysicalMagazineGrabInsert()
 	}
 }
 
-void PhysicalReloadController::Update()
+void ManualReloadController::Update()
 {
 	if (!G().c_DisableEmptyMagazineAutoReload->Value()
 		|| G().bUse3DOFAiming
 		|| !HasMagazineBones())
 	{
-		if (phase != EPhysicalReloadPhase::Idle)
+		if (phase != EManualReloadPhase::Idle)
 		{
 			ResetState();
 		}
@@ -1145,7 +1145,7 @@ void PhysicalReloadController::Update()
 
 	switch (phase)
 	{
-	case EPhysicalReloadPhase::Idle:
+	case EManualReloadPhase::Idle:
 	{
 		IVR* vr = G().GetVR();
 		bool bReloadChanged = false;
@@ -1161,7 +1161,7 @@ void PhysicalReloadController::Update()
 			else
 			{
 				bShotgunShellSessionUserCancelled = false;
-				BeginPhysicalReload();
+				BeginManualReload();
 			}
 			break;
 		}
@@ -1174,7 +1174,7 @@ void PhysicalReloadController::Update()
 		TryBeginShotgunLoadFromBelt();
 		break;
 	}
-	case EPhysicalReloadPhase::PausedAtEject:
+	case EManualReloadPhase::PausedAtEject:
 	{
 		IVR* vr = G().GetVR();
 		bool bReloadChanged = false;
@@ -1187,7 +1187,7 @@ void PhysicalReloadController::Update()
 			break;
 		}
 
-		HandlePhysicalMagazineGrabInsert();
+		HandleManualMagazineGrabInsert();
 		break;
 	}
 	default:
@@ -1197,7 +1197,7 @@ void PhysicalReloadController::Update()
 
 //===============================// View-model visuals //===============================//
 
-void PhysicalReloadController::CaptureReloadStartInsertSocket(const Transform* outBoneTransforms)
+void ManualReloadController::CaptureReloadStartInsertSocket(const Transform* outBoneTransforms)
 {
 	if (bHasReloadStartMagSocket)
 	{
@@ -1223,7 +1223,7 @@ void PhysicalReloadController::CaptureReloadStartInsertSocket(const Transform* o
 
 	if (IsDebugLogging())
 	{
-		Logger::log << "[PhysicalReload:Insert] captured mag-well offset from reload start"
+		Logger::log << "[ManualReload:Insert] captured mag-well offset from reload start"
 			<< " gunBone=" << gunIndex
 			<< " magBone=" << magIndex
 			<< " localOffset=("
@@ -1234,7 +1234,7 @@ void PhysicalReloadController::CaptureReloadStartInsertSocket(const Transform* o
 	}
 }
 
-void PhysicalReloadController::UpdateInsertSocketFromGun(const Transform* outBoneTransforms)
+void ManualReloadController::UpdateInsertSocketFromGun(const Transform* outBoneTransforms)
 {
 	if (!bHasReloadStartMagSocket)
 	{
@@ -1257,7 +1257,7 @@ void PhysicalReloadController::UpdateInsertSocketFromGun(const Transform* outBon
 		static int debugLogCounter = 0;
 		if (debugLogCounter++ % 30 == 0)
 		{
-			Logger::log << "[PhysicalReload:Insert] socket from reload-start mag-well"
+			Logger::log << "[ManualReload:Insert] socket from reload-start mag-well"
 				<< " pos=("
 				<< magazineSocketPosition.x << ","
 				<< magazineSocketPosition.y << ","
@@ -1277,7 +1277,7 @@ void PhysicalReloadController::UpdateInsertSocketFromGun(const Transform* outBon
 	}
 }
 
-void PhysicalReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up)
+void ManualReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up)
 {
 	if (bHasCapturedGrip || reloadReplayCount <= 0)
 	{
@@ -1334,7 +1334,7 @@ void PhysicalReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* po
 	if (IsDebugLogging())
 	{
 		const Vector3 t = gripFromWristLocal * Vector3(0.0f, 0.0f, 0.0f);
-		Logger::log << "[PhysicalReload:Grip] captured grip from resume pose"
+		Logger::log << "[ManualReload:Grip] captured grip from resume pose"
 			<< " wristBone=" << wristIndex
 			<< " magBone=" << magIndex
 			<< " skipSeconds=" << skipSeconds
@@ -1344,7 +1344,7 @@ void PhysicalReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* po
 	}
 }
 
-bool PhysicalReloadController::GetGrabbedMagazineTargetMatrix(const Transform* outBoneTransforms, Matrix4& outTargetMatrix) const
+bool ManualReloadController::GetGrabbedMagazineTargetMatrix(const Transform* outBoneTransforms, Matrix4& outTargetMatrix) const
 {
 	const int wristIndex = WH().GetLeftWristIndex();
 	if (!bHasCapturedGrip || wristIndex < 0 || !outBoneTransforms)
@@ -1360,7 +1360,7 @@ bool PhysicalReloadController::GetGrabbedMagazineTargetMatrix(const Transform* o
 	return true;
 }
 
-void PhysicalReloadController::RelocateMagazineBones(
+void ManualReloadController::RelocateMagazineBones(
 	Transform* outBoneTransforms,
 	const Vector3& targetRootPos,
 	const Matrix4& targetRootOrientation) const
@@ -1398,7 +1398,7 @@ void PhysicalReloadController::RelocateMagazineBones(
 	}
 }
 
-Matrix4 PhysicalReloadController::GetDetachedMagazineOrientation(const Transform* outBoneTransforms) const
+Matrix4 ManualReloadController::GetDetachedMagazineOrientation(const Transform* outBoneTransforms) const
 {
 	if (bMagazineGrabbed)
 	{
@@ -1453,7 +1453,7 @@ Matrix4 PhysicalReloadController::GetDetachedMagazineOrientation(const Transform
 	return orientation;
 }
 
-void PhysicalReloadController::UpdateMagazinePlacement(const HaloID& id, Transform* outBoneTransforms)
+void ManualReloadController::UpdateMagazinePlacement(const HaloID& id, Transform* outBoneTransforms)
 {
 	const bool bDebug = IsDebugLogging();
 	static int debugLogCounter = 0;
@@ -1462,7 +1462,7 @@ void PhysicalReloadController::UpdateMagazinePlacement(const HaloID& id, Transfo
 	{
 		if (bDebug && bMagazineEjected && debugLogCounter++ % 60 == 0)
 		{
-			Logger::log << "[PhysicalReload:Belt] skip placement assetMismatch" << std::endl;
+			Logger::log << "[ManualReload:Belt] skip placement assetMismatch" << std::endl;
 		}
 		return;
 	}
@@ -1498,7 +1498,7 @@ void PhysicalReloadController::UpdateMagazinePlacement(const HaloID& id, Transfo
 	{
 		if (debugLogCounter++ % 30 == 0)
 		{
-			Logger::log << "[PhysicalReload:Belt] placed"
+			Logger::log << "[ManualReload:Belt] placed"
 				<< " rootBone=" << rootIndex
 				<< " grabbed=" << bMagazineGrabbed
 				<< " target=(" << targetPos.x << "," << targetPos.y << "," << targetPos.z << ")"
@@ -1528,7 +1528,7 @@ void PhysicalReloadController::UpdateMagazinePlacement(const HaloID& id, Transfo
 	}
 }
 
-void PhysicalReloadController::ApplyBonePin(const HaloID& id, TransformQuat* boneTransforms)
+void ManualReloadController::ApplyBonePin(const HaloID& id, TransformQuat* boneTransforms)
 {
 	if (!IsLocalViewModel(id))
 	{
@@ -1536,8 +1536,8 @@ void PhysicalReloadController::ApplyBonePin(const HaloID& id, TransformQuat* bon
 	}
 
 	const int phaseInt = static_cast<int>(phase);
-	const int kPausedAtEject = static_cast<int>(EPhysicalReloadPhase::PausedAtEject);
-	const int kPlayingFinish = static_cast<int>(EPhysicalReloadPhase::PlayingFinish);
+	const int kPausedAtEject = static_cast<int>(EManualReloadPhase::PausedAtEject);
+	const int kPlayingFinish = static_cast<int>(EManualReloadPhase::PlayingFinish);
 	const double now = GetClockSeconds();
 
 	if (phaseInt == kPausedAtEject)
@@ -1626,18 +1626,18 @@ void PhysicalReloadController::ApplyBonePin(const HaloID& id, TransformQuat* bon
 	lastBonePinPhase = phaseInt;
 }
 
-void PhysicalReloadController::PreSkeleton(const HaloID& id, TransformQuat* boneTransforms)
+void ManualReloadController::PreSkeleton(const HaloID& id, TransformQuat* boneTransforms)
 {
 	ApplyBonePin(id, boneTransforms);
 }
 
-void PhysicalReloadController::PostSkeleton(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, Transform* outBoneTransforms)
+void ManualReloadController::PostSkeleton(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, Transform* outBoneTransforms)
 {
-	if (phase == EPhysicalReloadPhase::PlayingEject)
+	if (phase == EManualReloadPhase::PlayingEject)
 	{
 		CaptureReloadStartInsertSocket(outBoneTransforms);
 	}
-	else if (phase == EPhysicalReloadPhase::PausedAtEject)
+	else if (phase == EManualReloadPhase::PausedAtEject)
 	{
 		UpdateInsertSocketFromGun(outBoneTransforms);
 		CaptureGripFromResumePose(id, pos, facing, up);

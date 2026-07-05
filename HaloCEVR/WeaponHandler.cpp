@@ -1,4 +1,4 @@
-﻿#include "WeaponHandler.h"
+#include "WeaponHandler.h"
 #include "Helpers/Objects.h"
 #include "Helpers/Camera.h"
 #include "Helpers/Assets.h"
@@ -226,7 +226,7 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 		UpdateCache(id, animationData);
 	}
 
-	Game::instance.GetPhysicalReload().PreSkeleton(id, boneTransforms);
+	Game::instance.GetManualReload().PreSkeleton(id, boneTransforms);
 
 	Transform unmodifiedHandTransform;
 	CalculateBoneTransform(cachedViewModel.rightWristIndex, boneArray, root, boneTransforms, unmodifiedHandTransform);
@@ -463,7 +463,7 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 		} while (i != lastIndex);
 	}
 
-	Game::instance.GetPhysicalReload().PostSkeleton(id, pos, facing, up, outBoneTransforms);
+	Game::instance.GetManualReload().PostSkeleton(id, pos, facing, up, outBoneTransforms);
 }
 
 inline void WeaponHandler::CalculateBoneTransform(int boneIndex, Bone* boneArray, Transform& root, TransformQuat* boneTransforms, Transform& outTransform) const
@@ -628,7 +628,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0 || animationData->NumBones > 256)
 	{
 		Logger::log << "[UpdateCache] Invalid animation data for asset " << id << std::endl;
-		Game::instance.GetPhysicalReload().OnViewModelCached(id, nullptr, WeaponType::Unknown);
+		Game::instance.GetManualReload().OnViewModelCached(id, nullptr, WeaponType::Unknown);
 		return;
 	}
 
@@ -723,7 +723,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	if (!player)
 	{
 		Logger::log << "[UpdateCache] Can't find local player" << std::endl;
-		Game::instance.GetPhysicalReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
+		Game::instance.GetManualReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
 		return;
 	}
 
@@ -732,7 +732,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	{
 		Logger::log << "[UpdateCache] Can't find weapon from WeaponID " << player->weapon << std::endl;
 		Logger::log << "[UpdateCache] Player Tag = " << player->tagID << std::endl;
-		Game::instance.GetPhysicalReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
+		Game::instance.GetManualReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
 		return;
 	}
 
@@ -740,12 +740,12 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	if (!weapon)
 	{
 		Logger::log << "[UpdateCache] Can't find weapon asset from TagID " << weaponObj->tagID << std::endl;
-		Game::instance.GetPhysicalReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
+		Game::instance.GetManualReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
 		return;
 	}
 
 	cachedViewModel.weaponType = GetWeaponType(weapon);
-	Game::instance.GetPhysicalReload().OnViewModelCached(id, animationData, cachedViewModel.weaponType);
+	Game::instance.GetManualReload().OnViewModelCached(id, animationData, cachedViewModel.weaponType);
 
 	if (!weapon->WeaponData)
 	{
@@ -754,6 +754,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 		Logger::log << "[UpdateCache] Weapon Path = " << weapon->WeaponAsset << std::endl;
 		return;
 	}
+
 
 	Asset_GBXModel* model = Helpers::GetTypedAsset<Asset_GBXModel>(weapon->WeaponData->ViewModelID);
 	if (!model)

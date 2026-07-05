@@ -18,6 +18,16 @@ struct WeaponManualReloadSettings
 	uint16_t MagazineCapacity = 0;
 };
 
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
+	WeaponManualReloadSettings,
+	Weapon,
+	Description,
+	PauseTicks,
+	ResumeTicks,
+	MagazineBoneName,
+	ContinuousReload,
+	MagazineCapacity)
+
 class WeaponManualReloadConfigManager
 {
 public:
@@ -31,10 +41,8 @@ public:
 	mutable bool ReloadOnChange = true;
 
 protected:
-	mutable WeaponManualReloadSettings defaults;
 	mutable std::list<WeaponManualReloadSettings> weaponList;
 	mutable WeaponManualReloadSettings fallbackSettings;
 
-	WeaponManualReloadSettings ParseSettingsFromJson(const json& entry, const WeaponManualReloadSettings& base) const;
 	static bool MatchesBoneName(const char* boneName, const std::string& configName);
 };

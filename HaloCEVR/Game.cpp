@@ -24,7 +24,7 @@
 #include "Helpers/Cutscene.h"
 
 Game::Game()
-	: physicalReload(inputHandler)
+	: manualReload(inputHandler)
 {
 }
 
@@ -902,7 +902,7 @@ void Game::ReloadEnd(short param1, HaloID param2)
 		return;
 	}
 
-	GetPhysicalReload().OnReloadEnd();
+	GetManualReload().OnReloadEnd();
 }
 
 Vector3 Game::GetSmoothedInput() const
@@ -1097,10 +1097,10 @@ void Game::SetupConfigs()
 	c_RightShoulderHolsterActivationDistance = config.RegisterFloat("RightShoulderHolsterDistance", "The 'size' of the right shoulder holster. This is the distance that the dominant hand needs to be from the holster to change weapons (<0 to disable)", 0.3f);
 	c_RightShoulderHolsterOffset = config.RegisterVector3("RightShoulderHolsterOffset", "The (foward, left, up) Offset of the right shoulder holster relative to the headset's location", Vector3(-0.15f, -0.25f, -0.25f));
 	// Manual reload settings
-	c_DisableEmptyMagazineAutoReload = config.RegisterBool("DisableEmptyMagazineAutoReload", "When enabled, auto-reload on empty is disabled and you physically reload by pressing reload, grabbing the belt magazine, and inserting it. Works for empty and tactical (partial mag) reloads in 6DOF mode", false);
-	c_LogPhysicalReloadFrames = config.RegisterBool("LogPhysicalReloadFrames", "When enabled, logs reload phase and timer each tick during physical reload (use to calibrate pause tick settings)", false);
-	c_LogPhysicalReloadDebug = config.RegisterBool("LogPhysicalReloadDebug", "When enabled, logs belt magazine placement and reload sound muting (draws an orange marker at the belt mag position)", false);
-	c_PhysicalReloadSoundStopDelay = config.RegisterFloat("PhysicalReloadSoundStopDelay", "Seconds to let the reload sound keep playing after the animation pauses at eject, so you hear the start of the reload before it goes quiet", 0.1f);
+	c_DisableEmptyMagazineAutoReload = config.RegisterBool("DisableEmptyMagazineAutoReload", "When enabled, auto-reload on empty is disabled and you manually reload by pressing reload, grabbing the belt magazine, and inserting it. Works for empty and tactical (partial mag) reloads in 6DOF mode", false);
+	c_LogManualReloadFrames = config.RegisterBool("LogManualReloadFrames", "When enabled, logs reload phase and timer each tick during manual reload (use to calibrate pause tick settings)", false);
+	c_LogManualReloadDebug = config.RegisterBool("LogManualReloadDebug", "When enabled, logs belt magazine placement and reload sound muting (draws an orange marker at the belt mag position)", false);
+	c_ManualReloadSoundStopDelay = config.RegisterFloat("ManualReloadSoundStopDelay", "Seconds to let the reload sound keep playing after the animation pauses at eject, so you hear the start of the reload before it goes quiet", 0.1f);
 	c_BeltMagazineHipDrop = config.RegisterFloat("BeltMagazineHipDrop", "How far below the camera (world units) the belt magazine sits. Feet marker uses 0.62; hip is typically 0.18-0.28", 0.2f);
 	c_BeltMagazineOffset = config.RegisterVector3("BeltMagazineOffset", "Fine-tune (forward, left) offset of the spare magazine on your belt in metres, relative to hip height below the camera", Vector3(0.05f, 0.28f, 0.0f));
 	c_BeltMagazineGrabDistance = config.RegisterFloat("BeltMagazineGrabDistance", "How close the off-hand must be to the belt magazine to grab it (metres)", 0.1f);

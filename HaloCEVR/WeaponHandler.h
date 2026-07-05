@@ -1,8 +1,6 @@
 #pragma once
-#include <cstdint>
 #include "Maths/Vectors.h"
 #include "Maths/Matrices.h"
-#include "Helpers/Maths.h"
 #include "Helpers/Objects.h"
 
 #define DRAW_DEBUG_AIM 0
@@ -84,6 +82,7 @@ protected:
 		Matrix3 fireRotation;
 		WeaponType weaponType = WeaponType::Unknown;
 		bool IsShooting = false;
+		
 	} cachedViewModel;
 
 	UnitDynamicObject* weaponFiredPlayer = nullptr;
@@ -103,3 +102,4 @@ protected:
 	mutable Vector3 lastFireAim;
 #endif
 };
+

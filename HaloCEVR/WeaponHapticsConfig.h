@@ -57,7 +57,7 @@ public:
     void SetPlasmaPistolCharging();
     void WeaponFired(WeaponType Weapon);
     void HandleWeaponHaptics(IVR* vr, ControllerRole role, WeaponHapticArg haptics);
-    WeaponHapticArg physicalReloadInsert = {};
+    WeaponHapticArg manualReloadInsert = {};
 
 
 protected:

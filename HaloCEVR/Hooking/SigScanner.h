@@ -66,6 +66,7 @@ public:
 	OFFSET(DrawLoadingScreen2,    0x097410, "?? ?? ?? ?? ?? 81 ec 18 04 00 00 57 33 ff 3b c7 0f 84 ?? ?? ?? ?? a1 ?? ?? ?? ?? 56 83 ce ff");
 	OFFSET(DrawCinematicBars,     0x0499c0, "8b 15 ?? ?? ?? ?? 8a 4a 08 83 ec 34 84 c9 53 55 56 57");
 	OFFSET(DrawViewModel,	      0x0924b0, "66 8b 0d ?? ?? ?? ?? 81 ec 3c 0d 00 00 66 83 f9 ff 53 55 56 57");
+
 	OFFSET(SetViewModelPosition,  0x0d6880, "81 ec f0 00 00 00 53 55 25 ff ff 00 00 56 8b f1 8b 0d");
 	OFFSET(HandleInputs,          0x08b4b0, "83 ec 08 56 57 8d 44 24 08 50 ff 15 ?? ?? ?? ?? 8b 4c 24 0c");
 	OFFSET(UpdatePitchYaw,        0x072160, "81 ec a4 00 00 00 8b 15 ?? ?? ?? ?? 53 0f bf c8");
@@ -78,7 +79,7 @@ public:
 
 	// Halo CE 1.0.10 global variable holding a pointer to the sound manager (aLTis: read_dword(0x6C0580)).
 	OFFSET(SoundsGlobal,          0x2C0580, "");
-	
+
 	OFFSET(SetViewportSize,       0x0c8da0, "83 ec 10 53 55 56 57 8b f8 33 c0 83 ff 01 0f 9e c0");
 	OFFSET(SetViewportScale,      0x10ca90, "51 0f bf 50 2e 56 0f bf 70 30 57 0f bf 78 2c 2b f7");
 	OFFSET(SetCameraMatrices,     0x10cc40, "83 ec 54 53 55 57 8b f9 0f bf 57 2e 0f bf 4f 32 2b ca");

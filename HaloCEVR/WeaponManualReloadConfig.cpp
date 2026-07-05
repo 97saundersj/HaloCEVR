@@ -6,7 +6,7 @@ namespace fs = std::filesystem;
 
 WeaponManualReloadConfigManager::WeaponManualReloadConfigManager()
 {
-	fallbackSettings = defaults;
+	fallbackSettings = WeaponManualReloadSettings{};
 	fallbackSettings.Weapon = WeaponType::Unknown;
 
 	Logger::log << "[WeaponManualReloadConfig] Initializing" << std::endl;
@@ -21,49 +21,6 @@ bool WeaponManualReloadConfigManager::MatchesBoneName(const char* boneName, cons
 	}
 
 	return _stricmp(boneName, configName.c_str()) == 0;
-}
-
-WeaponManualReloadSettings WeaponManualReloadConfigManager::ParseSettingsFromJson(
-	const json& entry,
-	const WeaponManualReloadSettings& base) const
-{
-	WeaponManualReloadSettings settings = base;
-
-	if (entry.contains("Description"))
-	{
-		settings.Description = entry["Description"].get<std::string>();
-	}
-
-	if (entry.contains("PauseTicks"))
-	{
-		settings.PauseTicks = entry["PauseTicks"];
-	}
-
-	if (entry.contains("ResumeTicks"))
-	{
-		settings.ResumeTicks = entry["ResumeTicks"];
-	}
-
-	if (entry.contains("MagazineBoneName"))
-	{
-		settings.MagazineBoneName = entry["MagazineBoneName"].get<std::string>();
-	}
-
-	if (entry.contains("ContinuousReload"))
-	{
-		settings.ContinuousReload = entry["ContinuousReload"];
-	}
-
-	if (entry.contains("MagazineCapacity"))
-	{
-		settings.MagazineCapacity = entry["MagazineCapacity"];
-	}
-	else if (entry.contains("WeaponCapacity"))
-	{
-		settings.MagazineCapacity = entry["WeaponCapacity"];
-	}
-
-	return settings;
 }
 
 void WeaponManualReloadConfigManager::LoadConfig() const
@@ -93,42 +50,28 @@ void WeaponManualReloadConfigManager::LoadConfig() const
 	std::ifstream ifs(configPath);
 	json jf = json::parse(ifs);
 
-	defaults = WeaponManualReloadSettings{};
-
-	try
-	{
-		if (jf.contains("Defaults"))
-		{
-			defaults = ParseSettingsFromJson(jf["Defaults"], defaults);
-		}
-	}
-	catch (...)
-	{
-		Logger::log << "[WeaponManualReloadConfig] There was an issue loading Defaults" << std::endl;
-	}
-
-	fallbackSettings = defaults;
+	fallbackSettings = WeaponManualReloadSettings{};
 	fallbackSettings.Weapon = WeaponType::Unknown;
 
 	try
 	{
-		ReloadOnChange = jf["ReloadOnChange"];
+		ReloadOnChange = jf.value("ReloadOnChange", true);
 	}
 	catch (...)
 	{
 	}
 
+	const json base = WeaponManualReloadSettings{};
+
 	try
 	{
-		json weapons = jf["Weapons"];
-		for (const auto& item : weapons)
+		for (const auto& item : jf.value("Weapons", json::array()))
 		{
 			try
 			{
-				WeaponManualReloadSettings settings = defaults;
-				settings.Weapon = item["Weapon"];
-				settings = ParseSettingsFromJson(item, settings);
-				weaponList.push_back(settings);
+				json merged = base;
+				merged.update(item);
+				weaponList.push_back(merged.get<WeaponManualReloadSettings>());
 			}
 			catch (...)
 			{

@@ -23,15 +23,19 @@ public:
 
 	Vector3 smoothedPosition = Vector3(0.0f, 0.0f, 0.0f);
 
+	// Track previous yaw offset to detect snap turns for weapon position smoothing
 	float lastSmoothingYawOffset = 0.0f;
 	bool bLastYawInitialized = false;
 
 protected:
+
+
 	unsigned char UpdateFlashlight();
 	unsigned char UpdateHolsterSwitchWeapons();
 	unsigned char UpdateMelee();
 	unsigned char UpdateCrouch();
 
+	// Update Controls that rely on the distance between hands
 	void UpdateHandsProximity();
 	void CheckSwapWeaponHand();
 	void UpdateTwoHandedHold(float handDistance, bool handsWithinSwapWeaponDistance);
@@ -44,7 +48,7 @@ protected:
 
 	bool bWasGripping = false;
 	bool bWasSwappingHands = false;
-
+	
 	InputBindingID Jump = 0;
 	InputBindingID SwitchGrenades = 0;
 	InputBindingID Interact = 0;
@@ -60,12 +64,14 @@ protected:
 	InputBindingID Reload = 0;
 	InputBindingID Move = 0;
 	InputBindingID Look = 0;
-
+	
 	InputBindingID Recentre = 0;
 	InputBindingID TwoHandGrip = 0;
 
 	InputBindingID SwapWeaponHand = 0;
 	InputBindingID OffhandSwapWeaponHand = 0;
 
+private:
 	bool IsHandInHolster(const Vector3& handPos, const Vector3& holsterPos, const float& holsterActivationDistance);
 };
+

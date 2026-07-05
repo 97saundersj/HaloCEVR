@@ -48,12 +48,12 @@ void WeaponHapticsConfigManager::LoadConfig()
 
 		try
 		{
-			json physicalReloadInsertJson = jf["PhysicalReloadInsert"];
-			physicalReloadInsert = GetWeaponHapticArgFromJson(physicalReloadInsertJson);
+			json manualReloadInsertJson = jf["ManualReloadInsert"];
+			manualReloadInsert = GetWeaponHapticArgFromJson(manualReloadInsertJson);
 		}
 		catch (...)
 		{
-			Logger::log << "[WeaponHapticsConfig] There was an issue loading PhysicalReloadInsert settings" << std::endl;
+			Logger::log << "[WeaponHapticsConfig] There was an issue loading ManualReloadInsert settings" << std::endl;
 		}
 
 		ReloadOnChange = jf["ReloadOnChange"];

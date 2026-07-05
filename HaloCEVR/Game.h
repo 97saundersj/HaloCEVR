@@ -11,7 +11,7 @@
 #include "Maths/Vectors.h"
 #include "WeaponHandler.h"
 #include "InputHandler.h"
-#include "Helpers/PhysicalReload.h"
+#include "Helpers/ManualReload.h"
 #include "InGameRenderer.h"
 #include "WeaponHapticsConfig.h"
 #include "WeaponManualReloadConfig.h"
@@ -89,8 +89,8 @@ public:
 
 	inline IVR* GetVR() const { return vr; }
 
-	PhysicalReloadController& GetPhysicalReload() { return physicalReload; }
-	const PhysicalReloadController& GetPhysicalReload() const { return physicalReload; }
+	ManualReloadController& GetManualReload() { return manualReload; }
+	const ManualReloadController& GetManualReload() const { return manualReload; }
 
 	WeaponHandler& GetWeaponHandler() { return weaponHandler; }
 	const WeaponHandler& GetWeaponHandler() const { return weaponHandler; }
@@ -155,7 +155,7 @@ protected:
 
 	WeaponHandler weaponHandler;
 	InputHandler inputHandler;
-	PhysicalReloadController physicalReload;
+	ManualReloadController manualReload;
 
 	struct FPSTracker
 	{
@@ -250,9 +250,9 @@ public:
 	FloatProperty* c_RightHandMeleeSwingSpeed = nullptr;
 	FloatProperty* c_CrouchHeight = nullptr;
 	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
-	BoolProperty* c_LogPhysicalReloadFrames = nullptr;
-	BoolProperty* c_LogPhysicalReloadDebug = nullptr;
-	FloatProperty* c_PhysicalReloadSoundStopDelay = nullptr;
+	BoolProperty* c_LogManualReloadFrames = nullptr;
+	BoolProperty* c_LogManualReloadDebug = nullptr;
+	FloatProperty* c_ManualReloadSoundStopDelay = nullptr;
 	FloatProperty* c_BeltMagazineHipDrop = nullptr;
 	Vector3Property* c_BeltMagazineOffset = nullptr;
 	FloatProperty* c_BeltMagazineGrabDistance = nullptr;
