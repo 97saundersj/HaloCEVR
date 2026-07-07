@@ -42,6 +42,7 @@ void Hooks::InitHooks()
 	RESOLVEINDIRECT(IsWindowed);
 	RESOLVEINDIRECT(CutsceneData);
 	RESOLVEINDIRECT(CampaignLoading);
+	RESOLVEINDIRECT(SoundsGlobal);
 
 	{
 		Offset drawViewModel = o.DrawViewModel;
@@ -84,7 +85,6 @@ void Hooks::InitHooks()
 	SigScanner::UpdateOffset(o.TextAlphaWrite);
 	SigScanner::UpdateOffset(o.CrouchHeight);
 	SigScanner::UpdateOffset(o.CinematicBarDrawCall);
-	SigScanner::UpdateOffset(o.SoundsGlobal, false);
 
 	// There's almost certainly a better way to detect chimera than this
 	Game::instance.bDetectedChimera |= SigScanner::UpdateOffset(o.TabOutVideo, false) < 0;

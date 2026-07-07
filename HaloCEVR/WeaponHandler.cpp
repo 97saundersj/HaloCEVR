@@ -593,30 +593,8 @@ void WeaponHandler::LogViewModelBoneHierarchy(AssetData_ModelAnimations* animati
 	Logger::log << " ===" << std::endl;
 	Logger::log << "[WeaponHandler] Bone count: " << numBones << std::endl;
 
-	for (int i = 0; i < numBones; i++)
-	{
-		const Bone& bone = boneArray[i];
-
-		auto boneNameOrNone = [&](int index) -> const char*
-		{
-			if (index >= 0 && index < numBones)
-			{
-				return boneArray[index].BoneName;
-			}
-
-			return "none";
-		};
-
-		Logger::log << "[WeaponHandler] Bone[" << i << "] \"" << bone.BoneName << "\""
-			<< " parent=" << bone.Parent << " (\"" << boneNameOrNone(bone.Parent) << "\")"
-			<< " left=" << bone.LeftLeaf << " (\"" << boneNameOrNone(bone.LeftLeaf) << "\")"
-			<< " right=" << bone.RightLeaf << " (\"" << boneNameOrNone(bone.RightLeaf) << "\")"
-			<< std::endl;
-	}
-
 	if (numBones > 0)
 	{
-		Logger::log << "[WeaponHandler] -- Tree from bone 0 --" << std::endl;
 		LogViewModelBoneHierarchyNode(boneArray, numBones, 0, 0);
 	}
 

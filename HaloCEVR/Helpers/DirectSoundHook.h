@@ -9,8 +9,6 @@ namespace Helpers
 
 		bool IsActive();
 
-		void SetDebugLogging(bool enabled);
-
 		// Start recording which buffer(s) begin playing after this call.
 		void BeginCapture();
 

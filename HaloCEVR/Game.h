@@ -250,8 +250,6 @@ public:
 	FloatProperty* c_RightHandMeleeSwingSpeed = nullptr;
 	FloatProperty* c_CrouchHeight = nullptr;
 	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
-	BoolProperty* c_LogManualReloadFrames = nullptr;
-	BoolProperty* c_LogManualReloadDebug = nullptr;
 	FloatProperty* c_ManualReloadSoundStopDelay = nullptr;
 	FloatProperty* c_BeltMagazineHipDrop = nullptr;
 	Vector3Property* c_BeltMagazineOffset = nullptr;

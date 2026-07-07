@@ -59,11 +59,6 @@ double GetClockSeconds()
 	using namespace std::chrono;
 	return duration<double>(steady_clock::now().time_since_epoch()).count();
 }
-
-bool IsDebugLogging()
-{
-	return G().c_LogManualReloadDebug && G().c_LogManualReloadDebug->Value();
-}
 }
 
 ManualReloadController::ManualReloadController(InputHandler& inputHandler)
@@ -86,17 +81,17 @@ void ManualReloadController::PauseSounds()
 	{
 		stopDelaySeconds = 0.0f;
 	}
-	Helpers::PauseActiveSounds(static_cast<unsigned int>(stopDelaySeconds * 1000.0f), IsDebugLogging());
+	Helpers::PauseActiveSounds(static_cast<unsigned int>(stopDelaySeconds * 1000.0f));
 }
 
 void ManualReloadController::ClearSounds()
 {
-	Helpers::ClearActiveSounds(IsDebugLogging());
+	Helpers::ClearActiveSounds();
 }
 
 void ManualReloadController::ResumeSounds(bool bStopActiveSources)
 {
-	Helpers::ResumeActiveSounds(bStopActiveSources, IsDebugLogging());
+	Helpers::ResumeActiveSounds(bStopActiveSources);
 }
 
 void ManualReloadController::SuppressVanillaReloadControl(unsigned char& reloadControl) const
@@ -366,18 +361,15 @@ void ManualReloadController::CacheReloadMetadata(
 		<< magazineRootBoneIndex << " (\"" << rootName << "\")"
 		<< " markedBones=" << markedBoneCount << std::endl;
 
-	if (IsDebugLogging())
+	WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
+	if (weaponObject)
 	{
-		WeaponDynamicObject* weaponObject = GetLocalWeaponObject();
-		if (weaponObject)
-		{
-			const Weapon& liveWeapon = weaponObject->weaponData[0];
-			Logger::log << "[ManualReload] magazineCapacity=" << magazineCapacity
-				<< " weaponType=" << static_cast<int>(cachedWeaponType)
-				<< " ammo=" << liveWeapon.ammo
-				<< " reserveAmmo=" << liveWeapon.reserveAmmo
-				<< std::endl;
-		}
+		const Weapon& liveWeapon = weaponObject->weaponData[0];
+		Logger::log << "[ManualReload] magazineCapacity=" << magazineCapacity
+			<< " weaponType=" << static_cast<int>(cachedWeaponType)
+			<< " ammo=" << liveWeapon.ammo
+			<< " reserveAmmo=" << liveWeapon.reserveAmmo
+			<< std::endl;
 	}
 }
 
@@ -766,46 +758,6 @@ void ManualReloadController::UpdateReloadAnimationPause()
 		return;
 	}
 
-	if (G().c_LogManualReloadFrames && G().c_LogManualReloadFrames->Value()
-		&& (G().bIsReloading || phase != EManualReloadPhase::Idle))
-	{
-		static EManualReloadPhase lastLoggedPhase = EManualReloadPhase::Idle;
-		static int logFrameCounter = 0;
-		const bool phaseChanged = phase != lastLoggedPhase;
-		if (phaseChanged)
-		{
-			logFrameCounter = 0;
-			lastLoggedPhase = phase;
-		}
-		else
-		{
-			logFrameCounter++;
-		}
-
-		if (phaseChanged
-			|| phase == EManualReloadPhase::PlayingEject
-			|| (phase == EManualReloadPhase::PausedAtEject && logFrameCounter % 30 == 0)
-			|| phase == EManualReloadPhase::PlayingFinish)
-		{
-			const uint16_t reloadElapsed = initialReloadRemaining > weaponObject->weaponData[0].reloadRemaining
-				? initialReloadRemaining - weaponObject->weaponData[0].reloadRemaining
-				: 0;
-			Logger::log << "[ManualReload] weapon=" << static_cast<int>(cachedWeaponType)
-				<< " phase=" << static_cast<int>(phase)
-				<< " pauseTicks=" << ReloadSettings(cachedWeaponType).PauseTicks
-				<< " resumeTicks=" << ReloadSettings(cachedWeaponType).ResumeTicks
-				<< " reloadElapsed=" << reloadElapsed
-				<< " fpAnim=" << Helpers::GetFirstPersonBaseAnimId()
-				<< " fpFrame=" << Helpers::GetFirstPersonBaseAnimFrame()
-				<< " reloadEmptyIdx=" << GetActiveReloadAnimIndex()
-				<< " reloadState=" << weaponObject->weaponData[0].reloadState
-				<< " reloadRemaining=" << weaponObject->weaponData[0].reloadRemaining
-				<< " initialRemaining=" << initialReloadRemaining
-				<< " ammo=" << weaponObject->weaponData[0].ammo
-				<< std::endl;
-		}
-	}
-
 	if (phase == EManualReloadPhase::PlayingEject)
 	{
 		if (!G().bIsReloading)
@@ -845,13 +797,13 @@ void ManualReloadController::UpdateReloadAnimationPause()
 				}
 			}
 
-			if (IsDebugLogging())
-			{
-				const Vector3 beltPos = GetBeltMagazineWorldPosition();
-				Logger::log << "[ManualReload] paused at eject pauseTicks=" << pauseTicks
-					<< " beltPos=(" << beltPos.x << "," << beltPos.y << "," << beltPos.z << ")"
-					<< std::endl;
-			}
+			const Weapon& weapon = weaponObject->weaponData[0];
+			Logger::log << "[ManualReload] magazine ejected"
+				<< " weapon=" << static_cast<int>(cachedWeaponType)
+				<< " pauseTicks=" << pauseTicks
+				<< " reloadRemaining=" << frozenReloadRemaining
+				<< " ammo=" << weapon.ammo
+				<< std::endl;
 			PauseSounds();
 		}
 	}
@@ -969,12 +921,11 @@ void ManualReloadController::ResumeManualReloadAnimation()
 	bMagazineEjected = false;
 	ClearBoneSnapshot();
 
-	if (IsDebugLogging())
-	{
-		Logger::log << "[ManualReload] resume skipTicks=" << skipTicks
-			<< " replay=" << (boneReplay.HasMultipleSamples() ? "yes" : "no")
-			<< std::endl;
-	}
+	Logger::log << "[ManualReload] magazine inserted"
+		<< " weapon=" << static_cast<int>(cachedWeaponType)
+		<< " skipTicks=" << skipTicks
+		<< " ammo=" << weaponObject->weaponData[0].ammo
+		<< std::endl;
 }
 
 void ManualReloadController::HandleManualMagazineGrabInsert()
@@ -1103,18 +1054,6 @@ void ManualReloadController::CaptureReloadStartInsertSocket(const Transform* out
 		outBoneTransforms[gunIndex],
 		outBoneTransforms[magIndex].translation);
 	bHasReloadStartMagSocket = true;
-
-	if (IsDebugLogging())
-	{
-		Logger::log << "[ManualReload:Insert] captured mag-well offset from reload start"
-			<< " gunBone=" << gunIndex
-			<< " magBone=" << magIndex
-			<< " localOffset=("
-			<< reloadStartMagLocalOffset.x << ","
-			<< reloadStartMagLocalOffset.y << ","
-			<< reloadStartMagLocalOffset.z << ")"
-			<< std::endl;
-	}
 }
 
 void ManualReloadController::UpdateInsertSocketFromGun(const Transform* outBoneTransforms)
@@ -1133,30 +1072,6 @@ void ManualReloadController::UpdateInsertSocketFromGun(const Transform* outBoneT
 	magazineSocketPosition = SkeletonAnim::ApplyPointInBoneSpace(
 		outBoneTransforms[gunIndex],
 		reloadStartMagLocalOffset);
-
-	if (IsDebugLogging())
-	{
-		static int debugLogCounter = 0;
-		if (debugLogCounter++ % 30 == 0)
-		{
-			Logger::log << "[ManualReload:Insert] socket from reload-start mag-well"
-				<< " pos=("
-				<< magazineSocketPosition.x << ","
-				<< magazineSocketPosition.y << ","
-				<< magazineSocketPosition.z << ")"
-				<< std::endl;
-		}
-
-		const Vector3 up(0.0f, 0.0f, 1.0f);
-		G().inGameRenderer.DrawPolygon(
-			magazineSocketPosition,
-			Vector3(1.0f, 0.0f, 0.0f),
-			up,
-			6,
-			G().MetresToWorld(0.05f),
-			D3DCOLOR_ARGB(200, 0, 180, 255),
-			false);
-	}
 }
 
 void ManualReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up)
@@ -1200,18 +1115,6 @@ void ManualReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* pos,
 		animPoseTransforms[wristIndex],
 		animPoseTransforms[magIndex]);
 	bHasCapturedGrip = true;
-
-	if (IsDebugLogging())
-	{
-		const Vector3 t = gripFromWristLocal * Vector3(0.0f, 0.0f, 0.0f);
-		Logger::log << "[ManualReload:Grip] captured grip from resume pose"
-			<< " wristBone=" << wristIndex
-			<< " magBone=" << magIndex
-			<< " skipSeconds=" << skipSeconds
-			<< " replayIndex=" << replayIndex
-			<< " localTranslation=(" << t.x << "," << t.y << "," << t.z << ")"
-			<< std::endl;
-	}
 }
 
 bool ManualReloadController::GetGrabbedMagazineTargetMatrix(const Transform* outBoneTransforms, Matrix4& outTargetMatrix) const
@@ -1248,15 +1151,8 @@ Matrix4 ManualReloadController::GetDetachedMagazineOrientation(const Transform* 
 
 void ManualReloadController::UpdateMagazinePlacement(const HaloID& id, Transform* outBoneTransforms)
 {
-	const bool bDebug = IsDebugLogging();
-	static int debugLogCounter = 0;
-
 	if (!IsLocalViewModel(id))
 	{
-		if (bDebug && bMagazineEjected && debugLogCounter++ % 60 == 0)
-		{
-			Logger::log << "[ManualReload:Belt] skip placement assetMismatch" << std::endl;
-		}
 		return;
 	}
 
@@ -1291,31 +1187,6 @@ void ManualReloadController::UpdateMagazinePlacement(const HaloID& id, Transform
 		rootIndex,
 		targetPos,
 		GetDetachedMagazineOrientation(outBoneTransforms));
-
-	if (bDebug)
-	{
-		if (debugLogCounter++ % 30 == 0)
-		{
-			Logger::log << "[ManualReload:Belt] placed"
-				<< " rootBone=" << rootIndex
-				<< " grabbed=" << bMagazineGrabbed
-				<< " target=(" << targetPos.x << "," << targetPos.y << "," << targetPos.z << ")"
-				<< std::endl;
-		}
-
-		Vector3 forward = SkeletonAnim::FlattenForwardOnXY(
-			GetDetachedMagazineOrientation(outBoneTransforms).getForwardAxis());
-
-		const Vector3 up(0.0f, 0.0f, 1.0f);
-		G().inGameRenderer.DrawPolygon(
-			targetPos,
-			forward,
-			up,
-			6,
-			G().MetresToWorld(0.08f),
-			D3DCOLOR_ARGB(200, 255, 140, 0),
-			false);
-	}
 }
 
 void ManualReloadController::ApplyBonePin(const HaloID& id, TransformQuat* boneTransforms)

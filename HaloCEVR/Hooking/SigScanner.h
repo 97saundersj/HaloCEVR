@@ -43,6 +43,7 @@ public:
 	INDIRECT(IsWindowed,          0x1169c0, 0x0B, "83 ec 60 8b 15 ?? ?? ?? ?? 8b 0d ?? ?? ?? ?? 53 33 db");
 	INDIRECT(CutsceneData,        0x07f8d5, 0x0D, "83 c4 10 85 c0 74 25 8a 00 84 c0");
 	INDIRECT(CampaignLoading,     0x0c7886, 0x02, "38 1d ?? ?? ?? ?? 74 ?? e8 ?? ?? ?? ?? 38 1d ?? ?? ?? ?? 74 ?? e8");
+	INDIRECT(SoundsGlobal,        0x14D330, 0x01, "a1 ?? ?? ?? ?? 85 c0 74 64");
 
 	OFFSET(TabOutVideo,           0x0c7b74, "38 1D ?? ?? ?? ?? 74 0E 83 FD 01 74 09 83 FD 02 0F 85");
 	OFFSET(TabOutVideo2,          0x0c801c, "75 11 38 1D ?? ?? ?? ?? 75 04 3A C3 74 05 C6 44 24 17 01");
@@ -76,9 +77,6 @@ public:
 	OFFSET(ThrowGrenade,          0x16e440, "8b 44 24 04 8b 0d ?? ?? ?? ?? 8b 51 34 8b 0d ?? ?? ?? ?? 83 ec 3c");
 	OFFSET(ReloadStart,           0x0c35b0, "83 ec 0c 8b 54 24 10 53 55 0f bf 6c 24 1c 56 8b 35");
 	OFFSET(ReloadEnd,             0x0c3900, "8b 44 24 04 8b 15 ?? ?? ?? ?? 8b 52 34 53 8b 1d ?? ?? ?? ?? 25 ff ff 00 00 55 56");
-
-	// Halo CE 1.0.10 global variable holding a pointer to the sound manager (aLTis: read_dword(0x6C0580)).
-	OFFSET(SoundsGlobal,          0x2C0580, "");
 
 	OFFSET(SetViewportSize,       0x0c8da0, "83 ec 10 53 55 56 57 8b f8 33 c0 83 ff 01 0f 9e c0");
 	OFFSET(SetViewportScale,      0x10ca90, "51 0f bf 50 2e 56 0f bf 70 30 57 0f bf 78 2c 2b f7");

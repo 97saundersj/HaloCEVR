@@ -6,11 +6,11 @@ namespace Helpers
 	void BeginActiveSoundCapture();
 
 	// Mute/freeze captured (and retail-manager fallback) sounds after stopDelayMs.
-	void PauseActiveSounds(unsigned int stopDelayMs, bool bDebugLog = false);
+	void PauseActiveSounds(unsigned int stopDelayMs);
 
 	// Resume captured buffers from their stopped position, then clear pause state.
-	void ClearActiveSounds(bool bDebugLog = false);
+	void ClearActiveSounds();
 
 	// Unsuspend output when a capture session is cancelled or aborted.
-	void ResumeActiveSounds(bool bStopActiveSources = false, bool bDebugLog = false);
+	void ResumeActiveSounds(bool bStopActiveSources = false);
 }

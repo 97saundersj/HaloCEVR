@@ -58,7 +58,6 @@ namespace
 	bool g_captureReloadBuffers = false;
 	bool g_suppressReloadBuffers = false;
 	bool g_inPause = false;
-	bool g_debugLogging = false;
 	// Defer the actual stop so the start of the captured SFX is still heard before it cuts out.
 	bool g_reloadStopped = false;
 	ULONGLONG g_pauseStartTick = 0;
@@ -352,11 +351,6 @@ namespace
 
 	void LogInitStatus(bool bSuccess, const char* detail)
 	{
-		if (!g_debugLogging)
-		{
-			return;
-		}
-
 		Logger::log << "[DirectSoundHook] "
 			<< (bSuccess ? "installed" : "failed")
 			<< " (" << detail << ")" << std::endl;
@@ -384,11 +378,8 @@ void Helpers::DirectSoundHook::Init()
 	g_initAttempted = true;
 
 	const HMODULE dsoalDriver = GetModuleHandleA("dsoal-aldrv.dll");
-	if (g_debugLogging)
-	{
-		Logger::log << "[DirectSoundHook] dsound.dll=0x" << std::hex << dsoundModule
-			<< " dsoal-aldrv.dll=0x" << dsoalDriver << std::dec << std::endl;
-	}
+	Logger::log << "[DirectSoundHook] dsound.dll=0x" << std::hex << dsoundModule
+		<< " dsoal-aldrv.dll=0x" << dsoalDriver << std::dec << std::endl;
 
 	auto createExportHook = [dsoundModule](const char* exportName, LPVOID detour, LPVOID* original) -> bool
 	{
@@ -429,11 +420,6 @@ bool Helpers::DirectSoundHook::IsActive()
 	return g_hooksInstalled;
 }
 
-void Helpers::DirectSoundHook::SetDebugLogging(bool enabled)
-{
-	g_debugLogging = enabled;
-}
-
 void Helpers::DirectSoundHook::BeginCapture()
 {
 	std::lock_guard<std::mutex> lock(g_mutex);
@@ -471,18 +457,15 @@ void Helpers::DirectSoundHook::EnterPause(unsigned int stopDelayMs)
 	g_reloadStopped = true;
 	const int stoppedCount = StopReloadBuffers();
 
-	if (g_debugLogging)
+	size_t reloadCount = 0;
 	{
-		size_t reloadCount = 0;
-		{
-			std::lock_guard<std::mutex> lock(g_mutex);
-			reloadCount = g_reloadBuffers.size();
-		}
-
-		Logger::log << "[DirectSoundHook] pause stoppedBuffers="
-			<< stoppedCount << " capturedBuffers=" << reloadCount
-			<< " delayMs=" << g_stopDelayMs << std::endl;
+		std::lock_guard<std::mutex> lock(g_mutex);
+		reloadCount = g_reloadBuffers.size();
 	}
+
+	Logger::log << "[DirectSoundHook] pause stoppedBuffers="
+		<< stoppedCount << " capturedBuffers=" << reloadCount
+		<< " delayMs=" << g_stopDelayMs << std::endl;
 }
 
 void Helpers::DirectSoundHook::ExitPause(bool bStopActive)
@@ -505,7 +488,7 @@ void Helpers::DirectSoundHook::ExitPause(bool bStopActive)
 		g_reloadBuffers.clear();
 	}
 
-	if (bStopActive && g_debugLogging)
+	if (bStopActive)
 	{
 		Logger::log << "[DirectSoundHook] resume stoppedBuffers=" << stoppedCount << std::endl;
 	}
@@ -554,8 +537,5 @@ void Helpers::DirectSoundHook::ResumeCaptured()
 	g_pauseStartTick = 0;
 	g_stopDelayMs = 0;
 
-	if (g_debugLogging)
-	{
-		Logger::log << "[DirectSoundHook] resume captured resumedBuffers=" << resumedCount << std::endl;
-	}
+	Logger::log << "[DirectSoundHook] resume captured resumedBuffers=" << resumedCount << std::endl;
 }

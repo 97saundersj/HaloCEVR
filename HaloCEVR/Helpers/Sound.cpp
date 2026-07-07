@@ -9,6 +9,8 @@ namespace
 {
 	constexpr int kSoundEntrySize = 176;
 	constexpr int kMaxSoundSlots = 100;
+	constexpr int kSoundManagerActiveCountOffset = 48;
+	constexpr int kSoundManagerSoundArrayOffset = 52;
 	constexpr int kSoundOrderIdOffset = 140;
 	constexpr int kSoundParentOffset = 12;
 	constexpr int kSoundScaleOffset = 24;
@@ -44,82 +46,50 @@ namespace
 		return false;
 	}
 
-	uintptr_t GetSoundManager(bool bDebugLog)
+	uintptr_t GetSoundManager()
 	{
 		if (Helpers::DirectSoundHook::IsActive())
 		{
 			return 0;
 		}
 
-		const uintptr_t globalAddress = static_cast<uintptr_t>(Hooks::o.SoundsGlobal.Address);
+		const uintptr_t globalAddress = static_cast<uintptr_t>(Hooks::o.SoundsGlobal);
 		if (!globalAddress)
 		{
-			if (bDebugLog)
+			static bool loggedNullGlobal = false;
+			if (!loggedNullGlobal)
 			{
-				static bool loggedNullGlobal = false;
-				if (!loggedNullGlobal)
-				{
-					loggedNullGlobal = true;
-					Logger::log << "[Sound] SoundsGlobal.Address is null" << std::endl;
-				}
+				loggedNullGlobal = true;
+				Logger::log << "[Sound] SoundsGlobal is null" << std::endl;
 			}
 			return 0;
 		}
 
-		auto tryManager = [&](uintptr_t manager, const char* label) -> uintptr_t
+		const uintptr_t manager = *reinterpret_cast<uintptr_t*>(globalAddress);
+		if (!manager)
 		{
-			const uintptr_t soundArray = *reinterpret_cast<uintptr_t*>(manager + 52);
-			const uint16_t activeCount = *reinterpret_cast<uint16_t*>(manager + 48);
-			if (bDebugLog)
-			{
-				Logger::log << "[Sound] " << label
-					<< " manager=0x" << std::hex << manager
-					<< " array=0x" << soundArray
-					<< " active=" << std::dec << activeCount << std::endl;
-			}
-
-			if (soundArray && activeCount > 0)
-			{
-				return manager;
-			}
-
 			return 0;
-		};
-
-		const uintptr_t managerPtr = *reinterpret_cast<uintptr_t*>(globalAddress);
-		if (managerPtr)
-		{
-			if (uintptr_t heap = tryManager(managerPtr, "heap"))
-			{
-				return heap;
-			}
 		}
 
-		if (uintptr_t embedded = tryManager(globalAddress, "embedded"))
+		const uintptr_t soundArray = *reinterpret_cast<uintptr_t*>(manager + kSoundManagerSoundArrayOffset);
+		const uint16_t activeCount = *reinterpret_cast<uint16_t*>(manager + kSoundManagerActiveCountOffset);
+		Logger::log << "[Sound] manager=0x" << std::hex << manager
+			<< " array=0x" << soundArray
+			<< " active=" << std::dec << activeCount << std::endl;
+
+		if (!soundArray || activeCount == 0)
 		{
-			return embedded;
+			return 0;
 		}
 
-		if (bDebugLog)
-		{
-			static bool loggedEmptyManager = false;
-			if (!loggedEmptyManager)
-			{
-				loggedEmptyManager = true;
-				Logger::log << "[Sound] no active sounds via manager global=0x"
-					<< std::hex << globalAddress
-					<< " deref=0x" << managerPtr << std::dec << std::endl;
-			}
-		}
-
-		return 0;
+		return manager;
 	}
 
 	template<typename Fn>
 	void ForEachActiveSound(uintptr_t manager, Fn callback)
 	{
-		const uint16_t activeCount = *reinterpret_cast<uint16_t*>(manager + 48);
-		const uintptr_t soundArray = *reinterpret_cast<uintptr_t*>(manager + 52);
+		const uint16_t activeCount = *reinterpret_cast<uint16_t*>(manager + kSoundManagerActiveCountOffset);
+		const uintptr_t soundArray = *reinterpret_cast<uintptr_t*>(manager + kSoundManagerSoundArrayOffset);
 		if (!soundArray || activeCount == 0)
 		{
 			return;
@@ -158,14 +128,14 @@ namespace
 		*reinterpret_cast<float*>(entry + kSoundGainOffset) = 0.0f;
 	}
 
-	void ProcessActiveSounds(bool bClearOnly, bool bDebugLog)
+	void ProcessActiveSounds(bool bClearOnly)
 	{
 		if (Helpers::DirectSoundHook::IsActive())
 		{
 			return;
 		}
 
-		const uintptr_t manager = GetSoundManager(bDebugLog);
+		const uintptr_t manager = GetSoundManager();
 		if (!manager)
 		{
 			return;
@@ -174,10 +144,7 @@ namespace
 		HaloID playerId{};
 		if (!Helpers::GetLocalPlayerID(playerId))
 		{
-			if (bDebugLog)
-			{
-				Logger::log << "[Sound] no local player id" << std::endl;
-			}
+			Logger::log << "[Sound] no local player id" << std::endl;
 			return;
 		}
 
@@ -188,7 +155,7 @@ namespace
 			weaponId = player->weapon;
 		}
 
-		const uint16_t activeCount = *reinterpret_cast<uint16_t*>(manager + 48);
+		const uint16_t activeCount = *reinterpret_cast<uint16_t*>(manager + kSoundManagerActiveCountOffset);
 		int matchedCount = 0;
 		ForEachActiveSound(manager, [&](int /*slot*/, uintptr_t entry)
 		{
@@ -218,14 +185,11 @@ namespace
 			stoppedCount++;
 		});
 
-		if (bDebugLog)
-		{
-			Logger::log << "[Sound] retail active=" << activeCount
-				<< " matched=" << matchedCount
-				<< " stopped=" << stoppedCount
-				<< " stopAllFallback=" << bStopAllDuringPause
-				<< std::endl;
-		}
+		Logger::log << "[Sound] retail active=" << activeCount
+			<< " matched=" << matchedCount
+			<< " stopped=" << stoppedCount
+			<< " stopAllFallback=" << bStopAllDuringPause
+			<< std::endl;
 	}
 }
 
@@ -235,26 +199,23 @@ void Helpers::BeginActiveSoundCapture()
 	Helpers::DirectSoundHook::BeginCapture();
 }
 
-void Helpers::PauseActiveSounds(unsigned int stopDelayMs, bool bDebugLog)
+void Helpers::PauseActiveSounds(unsigned int stopDelayMs)
 {
-	Helpers::DirectSoundHook::SetDebugLogging(bDebugLog);
 	Helpers::DirectSoundHook::Init();
 	Helpers::DirectSoundHook::EnterPause(stopDelayMs);
-	ProcessActiveSounds(false, bDebugLog);
+	ProcessActiveSounds(false);
 }
 
-void Helpers::ClearActiveSounds(bool bDebugLog)
+void Helpers::ClearActiveSounds()
 {
-	Helpers::DirectSoundHook::SetDebugLogging(bDebugLog);
 	Helpers::DirectSoundHook::ResumeCaptured();
-	ProcessActiveSounds(true, bDebugLog);
+	ProcessActiveSounds(true);
 }
 
-void Helpers::ResumeActiveSounds(bool bStopActiveSources, bool bDebugLog)
+void Helpers::ResumeActiveSounds(bool bStopActiveSources)
 {
-	Helpers::DirectSoundHook::SetDebugLogging(bDebugLog);
 	Helpers::DirectSoundHook::ExitPause(bStopActiveSources);
-	if (bDebugLog && bStopActiveSources)
+	if (bStopActiveSources)
 	{
 		Logger::log << "[Sound] resume requested stopActive=" << bStopActiveSources << std::endl;
 	}
