@@ -59,6 +59,25 @@ double GetClockSeconds()
 	using namespace std::chrono;
 	return duration<double>(steady_clock::now().time_since_epoch()).count();
 }
+
+const char* WeaponTypeName(WeaponType type)
+{
+	switch (type)
+	{
+	case WeaponType::Pistol: return "Pistol";
+	case WeaponType::AssaultRifle: return "AssaultRifle";
+	case WeaponType::Shotgun: return "Shotgun";
+	case WeaponType::RocketLauncher: return "RocketLauncher";
+	case WeaponType::Sniper: return "Sniper";
+	case WeaponType::Flamethrower: return "Flamethrower";
+	case WeaponType::PlasmaPistol: return "PlasmaPistol";
+	case WeaponType::PlasmaRifle: return "PlasmaRifle";
+	case WeaponType::PlasmaCannon: return "PlasmaCannon";
+	case WeaponType::Needler: return "Needler";
+	case WeaponType::FuelRod: return "FuelRod";
+	default: return "Unknown";
+	}
+}
 }
 
 ManualReloadController::ManualReloadController(InputHandler& inputHandler)
@@ -69,24 +88,28 @@ ManualReloadController::ManualReloadController(InputHandler& inputHandler)
 
 void ManualReloadController::BeginSoundCapture()
 {
+	const WeaponManualReloadSettings& settings = ReloadSettings(cachedWeaponType);
+	Logger::log << "[ManualReload] sound capture begin"
+		<< " weapon=" << WeaponTypeName(cachedWeaponType)
+		<< " (" << static_cast<int>(cachedWeaponType) << ")"
+		<< " pauseTicks=" << settings.PauseTicks
+		<< " resumeTicks=" << settings.ResumeTicks
+		<< std::endl;
 	Helpers::BeginActiveSoundCapture();
 }
 
 void ManualReloadController::PauseSounds()
 {
-	float stopDelaySeconds = G().c_ManualReloadSoundStopDelay
-		? G().c_ManualReloadSoundStopDelay->Value()
-		: 0.0f;
-	if (stopDelaySeconds < 0.0f)
-	{
-		stopDelaySeconds = 0.0f;
-	}
-	Helpers::PauseActiveSounds(static_cast<unsigned int>(stopDelaySeconds * 1000.0f));
+	Helpers::PauseActiveSounds(cachedWeaponType);
 }
 
-void ManualReloadController::ClearSounds()
+void ManualReloadController::ClearSounds(float skipSeconds)
 {
-	Helpers::ClearActiveSounds();
+	Logger::log << "[ManualReload] sound clear/resume"
+		<< " weapon=" << WeaponTypeName(cachedWeaponType)
+		<< " skipSeconds=" << skipSeconds
+		<< std::endl;
+	Helpers::ClearActiveSounds(skipSeconds);
 }
 
 void ManualReloadController::ResumeSounds(bool bStopActiveSources)
@@ -243,6 +266,11 @@ void ManualReloadController::CacheReloadMetadata(
 	AssetData_ModelAnimations* animationData,
 	WeaponType weaponType)
 {
+	if (cachedWeaponType != weaponType)
+	{
+		Helpers::ClearRememberedReloadSounds();
+	}
+
 	ClearReloadMetadata();
 	cachedViewModelAsset = id;
 	cachedWeaponType = weaponType;
@@ -799,10 +827,12 @@ void ManualReloadController::UpdateReloadAnimationPause()
 
 			const Weapon& weapon = weaponObject->weaponData[0];
 			Logger::log << "[ManualReload] magazine ejected"
-				<< " weapon=" << static_cast<int>(cachedWeaponType)
+				<< " weapon=" << WeaponTypeName(cachedWeaponType)
+				<< " (" << static_cast<int>(cachedWeaponType) << ")"
 				<< " pauseTicks=" << pauseTicks
 				<< " reloadRemaining=" << frozenReloadRemaining
 				<< " ammo=" << weapon.ammo
+				<< " initialRemaining=" << initialReloadRemaining
 				<< std::endl;
 			PauseSounds();
 		}
@@ -913,7 +943,7 @@ void ManualReloadController::ResumeManualReloadAnimation()
 		frozenReloadRemaining = shortenedRemaining;
 	}
 
-	ClearSounds();
+	ClearSounds(replaySkipSeconds);
 
 	phase = EManualReloadPhase::PlayingFinish;
 	finishFrameCounter = 0;
@@ -922,8 +952,12 @@ void ManualReloadController::ResumeManualReloadAnimation()
 	ClearBoneSnapshot();
 
 	Logger::log << "[ManualReload] magazine inserted"
-		<< " weapon=" << static_cast<int>(cachedWeaponType)
+		<< " weapon=" << WeaponTypeName(cachedWeaponType)
+		<< " (" << static_cast<int>(cachedWeaponType) << ")"
 		<< " skipTicks=" << skipTicks
+		<< " skipSeconds=" << replaySkipSeconds
+		<< " pauseTicks=" << pauseTicks
+		<< " resumeTicks=" << resumeTicks
 		<< " ammo=" << weaponObject->weaponData[0].ammo
 		<< std::endl;
 }

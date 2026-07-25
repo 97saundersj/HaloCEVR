@@ -1,16 +1,26 @@
 #pragma once
 
+#include "../WeaponHandler.h"
+
 namespace Helpers
 {
-	// Capture DirectSound buffers that start playing after this call.
+	// Install DirectSoundCreate hooks when dsound.dll is loaded. Safe to call repeatedly.
+	void InitSoundHook();
+
+	bool IsSoundHookActive();
+
+	// Start capturing DS activity during reload→eject; clear mute bookkeeping.
 	void BeginActiveSoundCapture();
 
-	// Mute/freeze captured (and retail-manager fallback) sounds after stopDelayMs.
-	void PauseActiveSounds(unsigned int stopDelayMs);
+	// Drop remembered mute/capture state (e.g. on weapon change).
+	void ClearRememberedReloadSounds();
 
-	// Resume captured buffers from their stopped position, then clear pause state.
-	void ClearActiveSounds();
+	// Identify reload via weapon→sound tag → SoundsGlobal → playback pool; volume-mute that buffer.
+	void PauseActiveSounds(WeaponType weaponType);
 
-	// Unsuspend output when a capture session is cancelled or aborted.
+	// Restore identity bookkeeping; resume gated DS buffer (seek by skipSeconds).
+	void ClearActiveSounds(float skipSeconds = 0.0f);
+
+	// Cancel pause state when a reload cycle is aborted.
 	void ResumeActiveSounds(bool bStopActiveSources = false);
 }

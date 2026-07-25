@@ -236,7 +236,6 @@
     <ClCompile Include="Helpers\FirstPersonAnim.cpp" />
     <ClCompile Include="Helpers\SkeletonAnim.cpp" />
     <ClCompile Include="Helpers\ManualReload.cpp" />
-    <ClCompile Include="Helpers\DirectSoundHook.cpp" />
     <ClCompile Include="Helpers\Sound.cpp" />
     <ClCompile Include="Helpers\Version.cpp" />
     <ClCompile Include="InGameRenderer.cpp" />

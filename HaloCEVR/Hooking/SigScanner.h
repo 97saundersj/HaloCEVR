@@ -44,6 +44,10 @@ public:
 	INDIRECT(CutsceneData,        0x07f8d5, 0x0D, "83 c4 10 85 c0 74 25 8a 00 84 c0");
 	INDIRECT(CampaignLoading,     0x0c7886, 0x02, "38 1d ?? ?? ?? ?? 74 ?? e8 ?? ?? ?? ?? 38 1d ?? ?? ?? ?? 74 ?? e8");
 	INDIRECT(SoundsGlobal,        0x14D330, 0x01, "a1 ?? ?? ?? ?? 85 c0 74 64");
+	// Playback channel pool base (imm in `imul eax,0x678; add eax,<pool>`). DS buffer at +0x670.
+	INDIRECT(SoundPlaybackPool,   0x146D03, 0x07, "69 C0 78 06 00 00 05 ?? ?? ?? ??");
+	// Sound definition table (tag metadata) — not the live DS buffer pointer.
+	INDIRECT(SoundBufferArray,    0x14FDE7, 0x05, "8B 51 34 8B 1D ?? ?? ?? ?? 8B F8 81 E7 FF FF 00 00 69 FF B0 00 00 00");
 
 	OFFSET(TabOutVideo,           0x0c7b74, "38 1D ?? ?? ?? ?? 74 0E 83 FD 01 74 09 83 FD 02 0F 85");
 	OFFSET(TabOutVideo2,          0x0c801c, "75 11 38 1D ?? ?? ?? ?? 75 04 3A C3 74 05 C6 44 24 17 01");

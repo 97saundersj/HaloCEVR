@@ -140,6 +140,6 @@ private:
 
 	void BeginSoundCapture();
 	void PauseSounds();
-	void ClearSounds();
+	void ClearSounds(float skipSeconds = 0.0f);
 	void ResumeSounds(bool bStopActiveSources);
 };

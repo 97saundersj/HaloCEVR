@@ -4,7 +4,7 @@
 #include "../Helpers/DX9.h"
 #include "../Helpers/Cutscene.h"
 #include "../Helpers/FirstPersonAnim.h"
-#include "../Helpers/DirectSoundHook.h"
+#include "../Helpers/Sound.h"
 #include "../Game.h"
 #include "../Helpers/Menus.h"
 #include "../Helpers/Maths.h"
@@ -43,6 +43,8 @@ void Hooks::InitHooks()
 	RESOLVEINDIRECT(CutsceneData);
 	RESOLVEINDIRECT(CampaignLoading);
 	RESOLVEINDIRECT(SoundsGlobal);
+	RESOLVEINDIRECT(SoundPlaybackPool);
+	RESOLVEINDIRECT(SoundBufferArray);
 
 	{
 		Offset drawViewModel = o.DrawViewModel;
@@ -128,7 +130,7 @@ void Hooks::EnableAllHooks()
 	ReloadStart.EnableHook();
 	ReloadEnd.EnableHook();
 
-	Helpers::DirectSoundHook::Init();
+	Helpers::InitSoundHook();
 
 	Freeze();
 
@@ -346,9 +348,9 @@ void Hooks::H_DrawFrame(Renderer* param1, short param2, short* param3, float tic
 {
 	VR_PROFILE_SCOPE(Hooks_DrawFrame);
 
-	if (!Helpers::DirectSoundHook::IsActive())
+	if (!Helpers::IsSoundHookActive())
 	{
-		Helpers::DirectSoundHook::Init();
+		Helpers::InitSoundHook();
 	}
 
 	/*
