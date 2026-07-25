@@ -12,10 +12,14 @@ namespace Helpers
 	// Start capturing DS activity during reload→eject; clear mute bookkeeping.
 	void BeginActiveSoundCapture();
 
+	// Record NEW weapon-parented sound tags while the reload anim plays (before eject pause).
+	// Tags already active at capture begin are ignored so leftover companions cannot win.
+	void SnapshotCaptureWeaponTags();
+
 	// Drop remembered mute/capture state (e.g. on weapon change).
 	void ClearRememberedReloadSounds();
 
-	// Identify reload via weapon→sound tag → SoundsGlobal → playback pool; volume-mute that buffer.
+	// Identify reload via weapon→tag → SoundsGlobal slot → playback pool; gate that DS buffer.
 	void PauseActiveSounds(WeaponType weaponType);
 
 	// Restore identity bookkeeping; resume gated DS buffer (seek by skipSeconds).

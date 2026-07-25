@@ -788,6 +788,10 @@ void ManualReloadController::UpdateReloadAnimationPause()
 
 	if (phase == EManualReloadPhase::PlayingEject)
 	{
+		// Accumulate weapon tags while the reload SFX plays; companions that only start at
+		// eject are then excluded from identity choice.
+		Helpers::SnapshotCaptureWeaponTags();
+
 		if (!G().bIsReloading)
 		{
 			EndShotgunShellSession();
@@ -896,6 +900,7 @@ void ManualReloadController::BeginChainedShellReload()
 	initialReloadRemaining = 0;
 	BeginSoundCapture();
 	TriggerWeaponReload();
+	Helpers::SnapshotCaptureWeaponTags();
 	bManualReloadPending = false;
 
 	if (!G().bIsReloading)
