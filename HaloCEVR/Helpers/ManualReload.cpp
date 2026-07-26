@@ -571,22 +571,24 @@ void ManualReloadController::OnReloadEnd()
 
 Vector3 ManualReloadController::GetBeltMagazineWorldPosition() const
 {
-	Vector3 beltPos = Helpers::GetCamera().position;
-	beltPos.z -= G().c_BeltMagazineHipDrop->Value();
+	const Matrix4 headTransform = G().GetVR()->GetHMDTransform(true);
+	const Vector3 headPos = headTransform * Vector3(0.0f, 0.0f, 0.0f);
 
-	Matrix4 headTransform = G().GetVR()->GetHMDTransform(true);
 	Vector3 forward;
 	Vector3 left;
 	SkeletonAnim::GetLeveledBasisFromForward(
 		SkeletonAnim::FlattenForwardOnXY(headTransform.getForwardAxis()),
 		forward,
 		left);
+	const Vector3 up(0.0f, 0.0f, 1.0f);
 
-	const Vector3 offset = G().c_BeltMagazineOffset->Value();
-	const float scale = G().MetresToWorld(1.0f);
-	beltPos += forward * (offset.x * scale);
-	beltPos += left * (offset.y * scale);
-	return beltPos;
+	const Vector3 offset = G().c_BeltMagazineOffset->Value(); // metres: forward, left, up
+	Vector3 beltLocal = headPos;
+	beltLocal += forward * offset.x;
+	beltLocal += left * offset.y;
+	beltLocal += up * offset.z;
+
+	return Helpers::GetCamera().position + beltLocal * G().MetresToWorld(1.0f);
 }
 
 Vector3 ManualReloadController::GetOffHandWorldPosition() const
