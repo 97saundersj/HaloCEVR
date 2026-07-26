@@ -81,6 +81,12 @@ public:
 	OFFSET(ThrowGrenade,          0x16e440, "8b 44 24 04 8b 0d ?? ?? ?? ?? 8b 51 34 8b 0d ?? ?? ?? ?? 83 ec 3c");
 	OFFSET(ReloadStart,           0x0c35b0, "83 ec 0c 8b 54 24 10 53 55 0f bf 6c 24 1c 56 8b 35");
 	OFFSET(ReloadEnd,             0x0c3900, "8b 44 24 04 8b 15 ?? ?? ?? ?? 8b 52 34 53 8b 1d ?? ?? ?? ?? 25 ff ff 00 00 55 56");
+	// Retail sound start: allocates SoundsGlobal slot, writes tag (+8) and parent (+0xC).
+	// Channel/DS buffer are bound later by SoundChannelAssign*.
+	OFFSET(SoundStart,            0x14CF40, "83 EC 08 8B 0D ?? ?? ?? ?? 53 55 8B 6C 24 14");
+	// SoundsGlobal entry+0x8C (playback channel) writers — called when a voice binds a pool channel.
+	OFFSET(SoundChannelAssign,    0x14FBA0, "83 EC 24 53 55 8B 6C 24 30 8B 15 ?? ?? ?? ?? 56 0F BF C5 57");
+	OFFSET(SoundChannelAssign2,   0x151300, "83 EC 44 0F BF 44 24 48 53 8D 04 40 8D 04 C5 ?? ?? ?? ??");
 
 	OFFSET(SetViewportSize,       0x0c8da0, "83 ec 10 53 55 56 57 8b f8 33 c0 83 ff 01 0f 9e c0");
 	OFFSET(SetViewportScale,      0x10ca90, "51 0f bf 50 2e 56 0f bf 70 30 57 0f bf 78 2c 2b f7");

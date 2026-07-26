@@ -69,15 +69,20 @@ namespace
 	// Halo CE sound tag class (tag data +0x04). weapon_reload is the long magazine SFX.
 	constexpr int16_t kSoundClassWeaponReload = 6;
 
-	// Weapon-parented tags that appear AFTER capture begin. On first sight we bind the
-	// SoundsGlobal slot → SoundPlaybackPool DS buffer (the engine's start-time link).
+	// Weapon-parented tags that appear AFTER capture begin. Buffer is the start-time
+	// SoundsGlobal → pool DS link, frozen on first successful resolve so late channel
+	// reuse cannot steal the bind before eject.
 	struct CaptureTagSighting
 	{
 		uint32_t tagId = 0;
 		DWORD firstSeenMs = 0;
+		DWORD boundAtMs = 0;
 		int slot = -1;
+		int channel = -1;
 		int16_t soundClass = -1;
-		IDirectSoundBuffer* buffer = nullptr; // AddRef'd pool buffer at first sight
+		bool bStartConfirmed = false;  // set when SoundStart allocated this voice
+		bool bAssignConfirmed = false; // set when SoundChannelAssign wrote entry+0x8C
+		IDirectSoundBuffer* buffer = nullptr; // AddRef'd; frozen after first good bind
 	};
 	std::vector<CaptureTagSighting> g_captureWeaponTags;
 	DWORD g_captureStartTickMs = 0;
@@ -94,6 +99,8 @@ namespace
 	// DS-buffer sizes accepted by the reload gate, discovered at runtime from the reload
 	// sound tag(s). Only touched on the game thread (PauseActiveSounds → gate), so no lock.
 	std::vector<DWORD> g_reloadAllowedBytes;
+
+	IDirectSoundBuffer* GetBufferForSoundEntry(uintptr_t entry, bool bAlreadyHoldingDsMutex, int& outChannel);
 
 	bool IsValidSoundTagId(uint32_t tagId)
 	{
@@ -632,14 +639,17 @@ namespace
 			return 0xFFFFFFFFu;
 		};
 
-		std::vector<DiscoveredSound> preferred;
-		for (const DiscoveredSound& candidate : candidates)
+		auto isStartConfirmed = [](uint32_t tagId) -> bool
 		{
-			if (captureFirstSeen(candidate.tagId) != 0xFFFFFFFFu)
+			for (const CaptureTagSighting& sighting : g_captureWeaponTags)
 			{
-				preferred.push_back(candidate);
+				if (sighting.tagId == tagId && sighting.bStartConfirmed)
+				{
+					return true;
+				}
 			}
-		}
+			return false;
+		};
 
 		std::ostringstream allTagsLog;
 		for (size_t i = 0; i < candidates.size(); i++)
@@ -661,10 +671,32 @@ namespace
 			captureTagsLog << "0x" << std::hex << g_captureWeaponTags[i].tagId << std::dec;
 		}
 
+		// Strongest signal: SoundStart allocated this weapon_reload during the capture window.
+		std::vector<DiscoveredSound> preferred;
+		const char* preferReason = "startEvent";
+		for (const DiscoveredSound& candidate : candidates)
+		{
+			if (isStartConfirmed(candidate.tagId)
+				&& GetSoundTagClass(candidate.tagId) == kSoundClassWeaponReload)
+			{
+				preferred.push_back(candidate);
+			}
+		}
+
+		if (preferred.empty())
+		{
+			for (const DiscoveredSound& candidate : candidates)
+			{
+				if (captureFirstSeen(candidate.tagId) != 0xFFFFFFFFu)
+				{
+					preferred.push_back(candidate);
+				}
+			}
+			preferReason = "capture";
+		}
+
 		// A weapon_reload voice on the current weapon at eject IS this reload, even when the
 		// capture window never saw it start (rapid re-reload restarts the previous voice).
-		// Companions are other sound classes, so this cannot latch onto one.
-		const char* preferReason = "capture";
 		if (preferred.empty())
 		{
 			for (const DiscoveredSound& candidate : candidates)
@@ -1116,9 +1148,9 @@ namespace
 		}
 	}
 
-	const CaptureTagSighting* FindCaptureTagSighting(uint32_t tagId)
+	CaptureTagSighting* FindCaptureTagSighting(uint32_t tagId)
 	{
-		for (const CaptureTagSighting& sighting : g_captureWeaponTags)
+		for (CaptureTagSighting& sighting : g_captureWeaponTags)
 		{
 			if (sighting.tagId == tagId)
 			{
@@ -1126,6 +1158,73 @@ namespace
 			}
 		}
 		return nullptr;
+	}
+
+	// Assign or keep the start-time DS buffer on a sighting. Once set, the buffer is frozen
+	// unless the caller forces a replace (invalid COM / explicit refresh of a null bind).
+	bool SetSightingBufferLocked(CaptureTagSighting& sighting, IDirectSoundBuffer* buffer, DWORD nowMs, bool bForceReplace)
+	{
+		if (!buffer)
+		{
+			return false;
+		}
+
+		if (sighting.buffer == buffer)
+		{
+			if (sighting.boundAtMs == 0)
+			{
+				sighting.boundAtMs = nowMs;
+			}
+			return true;
+		}
+
+		if (sighting.buffer && !bForceReplace)
+		{
+			return false;
+		}
+
+		if (!SafeBufferAddRef(buffer))
+		{
+			return false;
+		}
+
+		if (sighting.buffer)
+		{
+			SafeBufferRelease(sighting.buffer);
+		}
+
+		sighting.buffer = buffer;
+		sighting.boundAtMs = nowMs;
+		return true;
+	}
+
+	// Resolve entry → pool DS buffer into the sighting. Fills a null bind; never overwrites
+	// a frozen start-time buffer (late channel reuse is the AR failure mode).
+	void RefreshSightingFromEntryLocked(CaptureTagSighting& sighting, uintptr_t entry, int slot, DWORD nowMs)
+	{
+		sighting.slot = slot;
+		sighting.channel = GetSoundEntryChannel(entry);
+
+		int linkedChan = -1;
+		IDirectSoundBuffer* linked = GetBufferForSoundEntry(entry, true, linkedChan);
+		if (linkedChan >= 0)
+		{
+			sighting.channel = linkedChan;
+		}
+
+		if (!linked || sighting.buffer)
+		{
+			return;
+		}
+
+		if (SetSightingBufferLocked(sighting, linked, nowMs, false))
+		{
+			Logger::log << "[Sound] tag bind start tag=0x" << std::hex << sighting.tagId << std::dec
+				<< " slot=" << sighting.slot
+				<< " chan=" << sighting.channel
+				<< " buffer=" << sighting.buffer
+				<< std::endl;
+		}
 	}
 
 	bool TryAddCandidateLocked(IDirectSoundBuffer* buffer, const char* reason)
@@ -1228,8 +1327,8 @@ namespace
 		}
 	}
 
-	// Attach a fresh DS Play/Seek to the weapon_reload tag sighting (slot→pool is NOT 1:1).
-	// First bind wins — later same-sized Play()s are companions/eject SFX and must not steal it.
+	// Prefer engine channel match: if this Play buffer is the live pool buffer for a
+	// weapon_reload sighting, fill a still-null start bind. Δt correlation is fallback only.
 	void AttachCapturePlayToReloadTagsLocked(IDirectSoundBuffer* buffer, DWORD startTickMs)
 	{
 		if (!buffer)
@@ -1237,16 +1336,63 @@ namespace
 			return;
 		}
 
-		for (CaptureTagSighting& sighting : g_captureWeaponTags)
+		const uintptr_t manager = GetSoundManager();
+		if (manager)
 		{
-			if (sighting.soundClass != kSoundClassWeaponReload)
+			HaloID weaponId{};
+			BaseDynamicObject* player = Helpers::GetLocalPlayer();
+			if (player && player->weapon.id != 0xffff)
 			{
-				continue;
+				weaponId = player->weapon;
 			}
 
-			if (sighting.buffer)
+			bool bChannelMatched = false;
+			ForEachActiveSound(manager, [&](int slot, uintptr_t entry)
+			{
+				if (bChannelMatched || !IsWeaponParentedSound(entry, weaponId))
+				{
+					return;
+				}
+
+				const uint32_t tagId = *reinterpret_cast<uint32_t*>(entry + kSoundTagIdOffset);
+				CaptureTagSighting* sighting = FindCaptureTagSighting(tagId);
+				if (!sighting || sighting->soundClass != kSoundClassWeaponReload || sighting->buffer)
+				{
+					return;
+				}
+
+				int linkedChan = -1;
+				IDirectSoundBuffer* linked = GetBufferForSoundEntry(entry, true, linkedChan);
+				if (!linked || linked != buffer)
+				{
+					return;
+				}
+
+				sighting->slot = slot;
+				sighting->channel = linkedChan;
+				if (SetSightingBufferLocked(*sighting, buffer, startTickMs, false))
+				{
+					Logger::log << "[Sound] tag bind play tag=0x" << std::hex << tagId << std::dec
+						<< " slot=" << slot
+						<< " chan=" << linkedChan
+						<< " buffer=" << buffer
+						<< " via=channel"
+						<< std::endl;
+					bChannelMatched = true;
+				}
+			});
+
+			if (bChannelMatched)
 			{
 				return;
+			}
+		}
+
+		for (CaptureTagSighting& sighting : g_captureWeaponTags)
+		{
+			if (sighting.soundClass != kSoundClassWeaponReload || sighting.buffer)
+			{
+				continue;
 			}
 
 			const int dt = static_cast<int>(startTickMs) - static_cast<int>(sighting.firstSeenMs);
@@ -1256,17 +1402,15 @@ namespace
 				continue;
 			}
 
-			if (!SafeBufferAddRef(buffer))
+			if (SetSightingBufferLocked(sighting, buffer, startTickMs, false))
 			{
-				return;
+				Logger::log << "[Sound] tag bind play tag=0x" << std::hex << sighting.tagId << std::dec
+					<< " slot=" << sighting.slot
+					<< " buffer=" << buffer
+					<< " dtMs=" << dt
+					<< " via=delta"
+					<< std::endl;
 			}
-
-			sighting.buffer = buffer;
-			Logger::log << "[Sound] tag bind play tag=0x" << std::hex << sighting.tagId << std::dec
-				<< " slot=" << sighting.slot
-				<< " buffer=" << buffer
-				<< " dtMs=" << dt
-				<< std::endl;
 			return;
 		}
 	}
@@ -1306,12 +1450,13 @@ namespace
 			return;
 		}
 
-		// Same buffer restarted (Seek+Play) — refresh start time and rebind to reload tag.
+		// Same buffer restarted (Seek+Play) — keep the ORIGINAL capture start time so a late
+		// companion restart cannot look like an early reload under playhead ranking. Still try
+		// to fill a null tag bind (frozen binds are left alone).
 		for (CapturePlayStart& existing : g_capturePlayStarts)
 		{
 			if (existing.buffer == buffer)
 			{
-				existing.startTickMs = nowMs;
 				AttachCapturePlayToReloadTagsLocked(buffer, nowMs);
 				return;
 			}
@@ -2019,6 +2164,62 @@ namespace
 		return true;
 	}
 
+	// Identity-linked buffers (startBind / channelLink / assign): also accept continuous ring
+	// voices whose playhead is AHEAD of capture elapsed (no Seek+Play; common for pistol).
+	// Still rejects near-start companions (cursor << expected) that stole the channel.
+	bool EvaluateIdentityReloadGateBuffer(
+		IDirectSoundBuffer* buffer,
+		float elapsedSec,
+		DWORD& outCursor,
+		DWORD& outExpected,
+		DWORD& outError,
+		DWORD& outBytes,
+		bool& outContinuous)
+	{
+		outContinuous = false;
+		if (EvaluateReloadGateBuffer(buffer, elapsedSec, outCursor, outExpected, outError, outBytes))
+		{
+			return true;
+		}
+
+		outCursor = 0;
+		outExpected = 0;
+		outError = 0;
+		outBytes = 0;
+		if (!buffer || !IsValidComObjectPointer(buffer) || !IsBufferPlaying(buffer))
+		{
+			return false;
+		}
+
+		DWORD rate = 0;
+		DWORD bytes = 0;
+		DWORD bytesPerSec = 0;
+		if (!SafeGetBufferFingerprint(buffer, rate, bytes, &bytesPerSec) || bytesPerSec == 0
+			|| !IsAllowedReloadBytes(bytes))
+		{
+			return false;
+		}
+
+		const DWORD cursor = SafeGetPlayCursor(buffer);
+		if (cursor == 0xFFFFFFFFu)
+		{
+			return false;
+		}
+
+		const DWORD expected = static_cast<DWORD>(bytesPerSec * elapsedSec + 0.5f);
+		if (cursor <= expected)
+		{
+			return false;
+		}
+
+		outCursor = cursor;
+		outExpected = expected;
+		outError = cursor - expected;
+		outBytes = bytes;
+		outContinuous = true;
+		return true;
+	}
+
 	void AcceptReloadGateLocked(
 		IDirectSoundBuffer* buffer,
 		DWORD cursor,
@@ -2050,8 +2251,8 @@ namespace
 			<< std::endl;
 	}
 
-	// Gate the reload voice ONCE at eject. The SoundsGlobal entry names its playback channel,
-	// which owns the DS buffer; capture-window Play/Seek binds are only fallbacks.
+	// Gate the reload voice ONCE at eject. Prefer the frozen start-time tag→buffer bind;
+	// live channelLink and capture Play/Seek ranking are fallbacks when that playhead fails.
 	void FinalizeReloadBuffersFromIdentityLocked()
 	{
 		if (g_reloadListFinalized)
@@ -2086,41 +2287,103 @@ namespace
 		}
 		const bool bPoolWindowOpen = (nowMs - g_firstGateAttemptMs) <= kHeuristicPoolWindowMs;
 
-		// 1) Deterministic channel link: the reload's SoundsGlobal entry names the playback
-		// channel it occupies, and that channel owns the DS buffer. No playhead heuristic —
-		// a reused ring buffer has a continuous cursor and would fail any such check.
+		// 1) Prefer the frozen start-time bind (captured when the reload voice first got a
+		// pool buffer). Live channelLink at eject can already point at a reused companion.
+		DWORD cursor = 0;
+		DWORD expected = 0;
+		DWORD err = 0;
+		DWORD bytes = 0;
+		if (const CaptureTagSighting* sighting = FindCaptureTagSighting(g_primaryMuteTagId))
+		{
+			if (sighting->buffer && !IsReloadBufferLocked(sighting->buffer))
+			{
+				const float bindElapsed = (sighting->firstSeenMs != 0 && nowMs >= sighting->firstSeenMs)
+					? static_cast<float>(nowMs - sighting->firstSeenMs) / 1000.0f
+					: elapsedSec;
+
+				Logger::log << "[Sound] start bind tag=0x" << std::hex << sighting->tagId << std::dec
+					<< " slot=" << sighting->slot
+					<< " chan=" << sighting->channel
+					<< " buffer=" << sighting->buffer
+					<< " playing=" << (IsBufferPlaying(sighting->buffer) ? 1 : 0)
+					<< " start=" << (sighting->bStartConfirmed ? 1 : 0)
+					<< " assign=" << (sighting->bAssignConfirmed ? 1 : 0)
+					<< std::endl;
+
+				bool bContinuous = false;
+				if (EvaluateIdentityReloadGateBuffer(sighting->buffer, bindElapsed,
+					cursor, expected, err, bytes, bContinuous))
+				{
+					AcceptReloadGateLocked(sighting->buffer, cursor, expected, err, bytes,
+						elapsedSec, mutedSlot, bContinuous ? "startBindContinuous" : "startBind");
+					return;
+				}
+
+				DWORD bindRate = 0;
+				DWORD bindBytes = 0;
+				DWORD bindBytesPerSec = 0;
+				SafeGetBufferFingerprint(sighting->buffer, bindRate, bindBytes, &bindBytesPerSec);
+				const DWORD rawCursor = SafeGetPlayCursor(sighting->buffer);
+				const DWORD bindCursor = (rawCursor == 0xFFFFFFFFu) ? 0 : rawCursor;
+				const DWORD bindExpected = static_cast<DWORD>(bindBytesPerSec * bindElapsed + 0.5f);
+				const DWORD bindErr = (bindCursor > bindExpected)
+					? (bindCursor - bindExpected) : (bindExpected - bindCursor);
+
+				std::ostringstream reason;
+				reason << "startBindRejected"
+					<< " cursor=" << bindCursor
+					<< " expected=" << bindExpected
+					<< " err=" << bindErr
+					<< " bytes=" << bindBytes
+					<< " playing=" << (IsBufferPlaying(sighting->buffer) ? 1 : 0)
+					<< " slot=" << sighting->slot;
+				LogGateMiss(reason.str());
+			}
+		}
+
+		// 2) Live channel link — same continuous-ring accept as startBind.
 		{
 			int linkChan = -1;
 			IDirectSoundBuffer* linked = GetBufferForSoundEntry(mutedEntry, true, linkChan);
 			if (linked && !IsReloadBufferLocked(linked))
 			{
+				const int linkPlaying = IsBufferPlaying(linked) ? 1 : 0;
+				Logger::log << "[Sound] channel link chan=" << linkChan
+					<< " tag=0x" << std::hex << g_primaryMuteTagId << std::dec
+					<< " buffer=" << linked
+					<< " playing=" << linkPlaying
+					<< std::endl;
+
+				bool bContinuous = false;
+				if (EvaluateIdentityReloadGateBuffer(linked, elapsedSec,
+					cursor, expected, err, bytes, bContinuous))
+				{
+					AcceptReloadGateLocked(linked, cursor, expected, err, bytes,
+						elapsedSec, mutedSlot, bContinuous ? "channelLinkContinuous" : "channelLink");
+					return;
+				}
+
 				DWORD linkRate = 0;
 				DWORD linkBytes = 0;
 				DWORD linkBytesPerSec = 0;
 				SafeGetBufferFingerprint(linked, linkRate, linkBytes, &linkBytesPerSec);
-
 				const DWORD rawCursor = SafeGetPlayCursor(linked);
 				const DWORD linkCursor = (rawCursor == 0xFFFFFFFFu) ? 0 : rawCursor;
 				const DWORD linkExpected = static_cast<DWORD>(linkBytesPerSec * elapsedSec + 0.5f);
 				const DWORD linkErr = (linkCursor > linkExpected)
 					? (linkCursor - linkExpected) : (linkExpected - linkCursor);
 
-				Logger::log << "[Sound] channel link chan=" << linkChan
-					<< " tag=0x" << std::hex << g_primaryMuteTagId << std::dec
-					<< " buffer=" << linked
-					<< " playing=" << (IsBufferPlaying(linked) ? 1 : 0)
-					<< std::endl;
-
-				AcceptReloadGateLocked(linked, linkCursor, linkExpected, linkErr, linkBytes,
-					elapsedSec, mutedSlot, "channelLink");
-				return;
+				std::ostringstream reason;
+				reason << "channelLinkRejected"
+					<< " cursor=" << linkCursor
+					<< " expected=" << linkExpected
+					<< " err=" << linkErr
+					<< " bytes=" << linkBytes
+					<< " playing=" << linkPlaying
+					<< " slot=" << mutedSlot;
+				LogGateMiss(reason.str());
 			}
 		}
-
-		DWORD cursor = 0;
-		DWORD expected = 0;
-		DWORD err = 0;
-		DWORD bytes = 0;
 
 		struct GateCandidate
 		{
@@ -2151,7 +2414,7 @@ namespace
 			candidates.push_back(candidate);
 		};
 
-		// 2) Capture-window Play/Seek starts — expected playhead from each buffer's own start.
+		// 3) Capture-window Play/Seek starts — expected playhead from each buffer's own start.
 		for (const CapturePlayStart& start : g_capturePlayStarts)
 		{
 			if (!start.buffer || !IsAllowedReloadBytes(start.bytes))
@@ -2164,7 +2427,7 @@ namespace
 			consider(start.buffer, playElapsed, "capturePlay", start.startTickMs);
 		}
 
-		// 3) Tag↔Play bind (set when capture Play correlates with weapon_reload tag).
+		// 4) Tag start-time bind again as a ranked candidate (if startBind early-out missed).
 		if (const CaptureTagSighting* sighting = FindCaptureTagSighting(g_primaryMuteTagId))
 		{
 			const float tagElapsed = (sighting->firstSeenMs != 0 && nowMs >= sighting->firstSeenMs)
@@ -2173,14 +2436,14 @@ namespace
 			consider(sighting->buffer, tagElapsed, "tagBind", sighting->firstSeenMs);
 		}
 
-		// 4) Probe muted SoundsGlobal entry for a tracked DS pointer.
+		// 5) Probe muted SoundsGlobal entry for a tracked DS pointer.
 		if (mutedEntry)
 		{
 			ProbeChannelForTrackedBufferLocked(mutedEntry);
 			consider(g_probedReloadBuffer, elapsedSec, "probe");
 		}
 
-		// 5) Cursor-ranked pool scan, only while the eject is fresh. Later in the hold every
+		// 6) Cursor-ranked pool scan, only while the eject is fresh. Later in the hold every
 		// same-sized leftover looks plausible, which is how we used to gate junk at 1.6s.
 		const uintptr_t poolBase = static_cast<uintptr_t>(Hooks::o.SoundPlaybackPool);
 		if (bPoolWindowOpen && poolBase)
@@ -2837,6 +3100,222 @@ void Helpers::BeginActiveSoundCapture()
 	g_captureReloadBuffers.store(true, std::memory_order_release);
 }
 
+void Helpers::OnSoundStarted(int slot, uint32_t tagId)
+{
+	if (!g_captureReloadBuffers.load(std::memory_order_acquire))
+	{
+		return;
+	}
+
+	if (slot < 0 || slot >= kMaxSoundSlots || !IsValidSoundTagId(tagId))
+	{
+		return;
+	}
+
+	const int16_t soundClass = GetSoundTagClass(tagId);
+	if (soundClass != kSoundClassWeaponReload)
+	{
+		return;
+	}
+
+	const uintptr_t manager = GetSoundManager();
+	if (!manager)
+	{
+		return;
+	}
+
+	const uintptr_t entry = GetSoundEntry(manager, slot);
+	if (!entry)
+	{
+		return;
+	}
+
+	// Prefer the live entry tag if present (SoundStart arg can be datum-index flavored).
+	const uint32_t entryTag = *reinterpret_cast<uint32_t*>(entry + kSoundTagIdOffset);
+	if (IsValidSoundTagId(entryTag))
+	{
+		tagId = entryTag;
+	}
+
+	HaloID weaponId{};
+	BaseDynamicObject* player = Helpers::GetLocalPlayer();
+	if (!player || player->weapon.id == 0xffff)
+	{
+		return;
+	}
+	weaponId = player->weapon;
+
+	if (!IsWeaponParentedSound(entry, weaponId))
+	{
+		return;
+	}
+
+	const int channel = GetSoundEntryChannel(entry);
+	if (IsBaselineVoice(tagId, slot, channel))
+	{
+		return;
+	}
+
+	const DWORD nowMs = GetTickCount();
+	std::lock_guard<std::mutex> lock(g_dsMutex);
+
+	if (CaptureTagSighting* existing = FindCaptureTagSighting(tagId))
+	{
+		existing->bStartConfirmed = true;
+		existing->soundClass = soundClass;
+		existing->slot = slot;
+		existing->channel = channel;
+		// Keep earliest firstSeen; fill buffer if channel already bound.
+		RefreshSightingFromEntryLocked(*existing, entry, slot, nowMs);
+		Logger::log << "[Sound] start event tag=0x" << std::hex << tagId << std::dec
+			<< " slot=" << slot
+			<< " chan=" << channel
+			<< " buffer=" << existing->buffer
+			<< " class=" << soundClass
+			<< std::endl;
+		return;
+	}
+
+	CaptureTagSighting created;
+	created.tagId = tagId;
+	created.firstSeenMs = nowMs;
+	created.slot = slot;
+	created.channel = channel;
+	created.soundClass = soundClass;
+	created.bStartConfirmed = true;
+	RefreshSightingFromEntryLocked(created, entry, slot, nowMs);
+	g_captureWeaponTags.push_back(created);
+
+	Logger::log << "[Sound] start event tag=0x" << std::hex << tagId << std::dec
+		<< " slot=" << slot
+		<< " chan=" << channel
+		<< " buffer=" << created.buffer
+		<< " class=" << soundClass
+		<< std::endl;
+}
+
+void Helpers::OnSoundChannelAssigned(short slot)
+{
+	if (!g_captureReloadBuffers.load(std::memory_order_acquire))
+	{
+		return;
+	}
+
+	if (slot < 0 || slot >= kMaxSoundSlots)
+	{
+		return;
+	}
+
+	const uintptr_t manager = GetSoundManager();
+	if (!manager)
+	{
+		return;
+	}
+
+	const uintptr_t entry = GetSoundEntry(manager, slot);
+	if (!entry)
+	{
+		return;
+	}
+
+	HaloID weaponId{};
+	BaseDynamicObject* player = Helpers::GetLocalPlayer();
+	if (!player || player->weapon.id == 0xffff)
+	{
+		return;
+	}
+	weaponId = player->weapon;
+
+	if (!IsWeaponParentedSound(entry, weaponId))
+	{
+		return;
+	}
+
+	const uint32_t tagId = *reinterpret_cast<uint32_t*>(entry + kSoundTagIdOffset);
+	if (!IsValidSoundTagId(tagId))
+	{
+		return;
+	}
+
+	const int16_t soundClass = GetSoundTagClass(tagId);
+	if (soundClass != kSoundClassWeaponReload)
+	{
+		return;
+	}
+
+	const int channel = GetSoundEntryChannel(entry);
+	if (channel < 0)
+	{
+		return;
+	}
+
+	const DWORD nowMs = GetTickCount();
+	std::lock_guard<std::mutex> lock(g_dsMutex);
+
+	CaptureTagSighting* sighting = FindCaptureTagSighting(tagId);
+	if (!sighting)
+	{
+		if (IsBaselineVoice(tagId, slot, channel))
+		{
+			return;
+		}
+
+		CaptureTagSighting created;
+		created.tagId = tagId;
+		created.firstSeenMs = nowMs;
+		created.slot = slot;
+		created.channel = channel;
+		created.soundClass = soundClass;
+		created.bAssignConfirmed = true;
+		RefreshSightingFromEntryLocked(created, entry, slot, nowMs);
+		g_captureWeaponTags.push_back(created);
+
+		Logger::log << "[Sound] assign bind tag=0x" << std::hex << tagId << std::dec
+			<< " slot=" << slot
+			<< " chan=" << channel
+			<< " buffer=" << created.buffer
+			<< " class=" << soundClass
+			<< std::endl;
+		return;
+	}
+
+	const bool bWasAssigned = sighting->bAssignConfirmed;
+	const IDirectSoundBuffer* prevBuffer = sighting->buffer;
+	const int prevChan = sighting->channel;
+
+	sighting->soundClass = soundClass;
+	sighting->bAssignConfirmed = true;
+	RefreshSightingFromEntryLocked(*sighting, entry, slot, nowMs);
+
+	// Assign is authoritative for this capture window — replace a wrong early Δt bind.
+	int linkedChan = -1;
+	IDirectSoundBuffer* linked = GetBufferForSoundEntry(entry, true, linkedChan);
+	if (linked && linked != sighting->buffer)
+	{
+		if (SetSightingBufferLocked(*sighting, linked, nowMs, true))
+		{
+			sighting->channel = linkedChan >= 0 ? linkedChan : channel;
+			Logger::log << "[Sound] assign rebind tag=0x" << std::hex << tagId << std::dec
+				<< " slot=" << slot
+				<< " chan=" << sighting->channel
+				<< " buffer=" << sighting->buffer
+				<< std::endl;
+			return;
+		}
+	}
+
+	// Halo re-enters assign often with the same binding — only log state changes.
+	const int newChan = linkedChan >= 0 ? linkedChan : channel;
+	if (!bWasAssigned || prevBuffer != sighting->buffer || prevChan != newChan)
+	{
+		Logger::log << "[Sound] assign confirm tag=0x" << std::hex << tagId << std::dec
+			<< " slot=" << slot
+			<< " chan=" << newChan
+			<< " buffer=" << sighting->buffer
+			<< std::endl;
+	}
+}
+
 void Helpers::SnapshotCaptureWeaponTags()
 {
 	const uintptr_t manager = GetSoundManager();
@@ -2873,27 +3352,28 @@ void Helpers::SnapshotCaptureWeaponTags()
 			return;
 		}
 
-		for (const CaptureTagSighting& sighting : g_captureWeaponTags)
-		{
-			if (sighting.tagId == tagId)
-			{
-				return;
-			}
-		}
-
-		// The entry names its playback channel, and that channel owns the DS buffer. Fall
-		// back to the nearest capture Play/Seek only if the channel isn't resolvable yet.
-		IDirectSoundBuffer* bound = nullptr;
-		int boundChannel = -1;
+		// Already seen: refresh slot/channel and fill a still-null start bind. Never replace
+		// a frozen buffer — that is how late pool reuse used to steal the reload voice.
+		if (CaptureTagSighting* existing = FindCaptureTagSighting(tagId))
 		{
 			std::lock_guard<std::mutex> lock(g_dsMutex);
-			IDirectSoundBuffer* linked = GetBufferForSoundEntry(entry, true, boundChannel);
-			if (linked && SafeBufferAddRef(linked))
-			{
-				bound = linked;
-			}
+			existing->soundClass = GetSoundTagClass(tagId);
+			RefreshSightingFromEntryLocked(*existing, entry, slot, nowMs);
+			return;
+		}
 
-			if (!bound)
+		CaptureTagSighting sighting;
+		sighting.tagId = tagId;
+		sighting.firstSeenMs = nowMs;
+		sighting.slot = slot;
+		sighting.soundClass = GetSoundTagClass(tagId);
+
+		{
+			std::lock_guard<std::mutex> lock(g_dsMutex);
+			RefreshSightingFromEntryLocked(sighting, entry, slot, nowMs);
+
+			// Channel may not be assigned yet — fall back to nearest capture Play/Seek.
+			if (!sighting.buffer)
 			{
 				DWORD bestDt = 250;
 				IDirectSoundBuffer* best = nullptr;
@@ -2911,26 +3391,20 @@ void Helpers::SnapshotCaptureWeaponTags()
 						best = start.buffer;
 					}
 				}
-				if (best && SafeBufferAddRef(best))
+				if (best)
 				{
-					bound = best;
+					SetSightingBufferLocked(sighting, best, nowMs, false);
 				}
 			}
 		}
 
-		CaptureTagSighting sighting;
-		sighting.tagId = tagId;
-		sighting.firstSeenMs = nowMs;
-		sighting.slot = slot;
-		sighting.soundClass = GetSoundTagClass(tagId);
-		sighting.buffer = bound;
 		g_captureWeaponTags.push_back(sighting);
 
 		Logger::log << "[Sound] tag start tag=0x" << std::hex << tagId << std::dec
-			<< " slot=" << slot
+			<< " slot=" << sighting.slot
 			<< " class=" << sighting.soundClass
-			<< " chan=" << boundChannel
-			<< " buffer=" << bound
+			<< " chan=" << sighting.channel
+			<< " buffer=" << sighting.buffer
 			<< std::endl;
 
 		// If Play arrives after this snapshot, AttachCapturePlayToReloadTags will bind it.

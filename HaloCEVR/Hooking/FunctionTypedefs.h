@@ -26,3 +26,7 @@ typedef void(*Func_DrawCinematicBars)();
 typedef void(*Func_DrawViewModel)();
 typedef void(__cdecl* Func_ReloadStart)(HaloID, short, bool);
 typedef void(*Func_ReloadEnd)();
+// Returns SoundsGlobal slot index, or -1 on failure. Parent/tag are on the new entry at return.
+typedef int(__cdecl* Func_SoundStart)(uint32_t tagId, void* source, int a3, int a4, int a5, int a6, int a7);
+typedef void(__cdecl* Func_SoundChannelAssign)(short, float);
+typedef void(__cdecl* Func_SoundChannelAssign2)(short, float);

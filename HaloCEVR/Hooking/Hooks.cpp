@@ -78,6 +78,9 @@ void Hooks::InitHooks()
 	CREATEHOOK(DrawViewModel);
 	CREATEHOOK(ReloadStart);
 	CREATEHOOK(ReloadEnd);
+	CREATEHOOK(SoundStart);
+	CREATEHOOK(SoundChannelAssign);
+	CREATEHOOK(SoundChannelAssign2);
 
 	// These are handled with a direct patch, so manually scan them
 	SigScanner::UpdateOffset(o.CutsceneFPSCap);
@@ -129,6 +132,9 @@ void Hooks::EnableAllHooks()
 	DrawViewModel.EnableHook();
 	ReloadStart.EnableHook();
 	ReloadEnd.EnableHook();
+	SoundStart.EnableHook();
+	SoundChannelAssign.EnableHook();
+	SoundChannelAssign2.EnableHook();
 
 	Helpers::InitSoundHook();
 
@@ -990,6 +996,30 @@ void __declspec(naked) Hooks::H_ReloadEnd()
 		add esp, 0x4
 		ret;
 	}
+}
+
+int Hooks::H_SoundStart(uint32_t tagId, void* source, int a3, int a4, int a5, int a6, int a7)
+{
+	const int slot = SoundStart.Original(tagId, source, a3, a4, a5, a6, a7);
+	// Retail returns a slot index in the low word (-1 on failure).
+	const int slotIndex = slot & 0xFFFF;
+	if (slotIndex != 0xFFFF)
+	{
+		Helpers::OnSoundStarted(slotIndex, tagId);
+	}
+	return slot;
+}
+
+void Hooks::H_SoundChannelAssign(short slot, float param2)
+{
+	SoundChannelAssign.Original(slot, param2);
+	Helpers::OnSoundChannelAssigned(slot);
+}
+
+void Hooks::H_SoundChannelAssign2(short slot, float param2)
+{
+	SoundChannelAssign2.Original(slot, param2);
+	Helpers::OnSoundChannelAssigned(slot);
 }
 
 //================================//Patches//================================//

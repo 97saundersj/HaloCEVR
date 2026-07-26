@@ -43,6 +43,9 @@ public:
 	DEFINE_HOOK(DrawViewModel);
 	DEFINE_HOOK_FULL(ReloadStart, void __cdecl, HaloID param1, short param2, bool param3);
 	DEFINE_HOOK(ReloadEnd);
+	DEFINE_HOOK_FULL(SoundStart, int __cdecl, uint32_t tagId, void* source, int a3, int a4, int a5, int a6, int a7);
+	DEFINE_HOOK_FULL(SoundChannelAssign, void __cdecl, short slot, float param2);
+	DEFINE_HOOK_FULL(SoundChannelAssign2, void __cdecl, short slot, float param2);
 
 	static void CallReloadStart(HaloID param1, short param2, bool param3);
 	static void CallReloadEnd(short magazineIndex, HaloID weaponObjectId);
