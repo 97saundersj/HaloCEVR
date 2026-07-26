@@ -3280,21 +3280,55 @@ void Helpers::OnSoundChannelAssigned(short slot)
 	}
 
 	const bool bWasAssigned = sighting->bAssignConfirmed;
-	const IDirectSoundBuffer* prevBuffer = sighting->buffer;
+	IDirectSoundBuffer* prevBuffer = sighting->buffer;
 	const int prevChan = sighting->channel;
 
 	sighting->soundClass = soundClass;
 	sighting->bAssignConfirmed = true;
+	sighting->slot = slot;
+	sighting->channel = channel;
+	// Fill a still-null bind from the pool; never freeze-overwrite here.
 	RefreshSightingFromEntryLocked(*sighting, entry, slot, nowMs);
 
-	// Assign is authoritative for this capture window — replace a wrong early Δt bind.
 	int linkedChan = -1;
 	IDirectSoundBuffer* linked = GetBufferForSoundEntry(entry, true, linkedChan);
+	if (linkedChan >= 0)
+	{
+		sighting->channel = linkedChan;
+	}
+
+	// Pool channel can briefly point at a leftover/draining buffer while the real reload
+	// already Play()'d on another. Only take the linked buffer when it is clearly better.
 	if (linked && linked != sighting->buffer)
 	{
-		if (SetSightingBufferLocked(*sighting, linked, nowMs, true))
+		const bool bExistingPlaying = sighting->buffer && IsBufferPlaying(sighting->buffer);
+		const bool bLinkedPlaying = IsBufferPlaying(linked);
+		bool bShouldRebind = false;
+
+		if (!sighting->buffer && bLinkedPlaying)
 		{
-			sighting->channel = linkedChan >= 0 ? linkedChan : channel;
+			bShouldRebind = true;
+		}
+		else if (!bExistingPlaying && bLinkedPlaying)
+		{
+			bShouldRebind = true;
+		}
+		else if (bExistingPlaying && bLinkedPlaying)
+		{
+			// Both live — prefer the fresher playhead (reload Seek+Play is near start;
+			// a leftover channel buffer is usually much further along).
+			const DWORD existingCursor = SafeGetPlayCursor(sighting->buffer);
+			const DWORD linkedCursor = SafeGetPlayCursor(linked);
+			if (existingCursor != 0xFFFFFFFFu && linkedCursor != 0xFFFFFFFFu
+				&& linkedCursor + 4096u < existingCursor)
+			{
+				bShouldRebind = true;
+			}
+		}
+		// existing playing + linked dead/stale → keep existing (fixes assign-rebind misses)
+
+		if (bShouldRebind && SetSightingBufferLocked(*sighting, linked, nowMs, true))
+		{
 			Logger::log << "[Sound] assign rebind tag=0x" << std::hex << tagId << std::dec
 				<< " slot=" << slot
 				<< " chan=" << sighting->channel
@@ -3303,14 +3337,17 @@ void Helpers::OnSoundChannelAssigned(short slot)
 			return;
 		}
 	}
+	else if (linked && !sighting->buffer)
+	{
+		SetSightingBufferLocked(*sighting, linked, nowMs, false);
+	}
 
 	// Halo re-enters assign often with the same binding — only log state changes.
-	const int newChan = linkedChan >= 0 ? linkedChan : channel;
-	if (!bWasAssigned || prevBuffer != sighting->buffer || prevChan != newChan)
+	if (!bWasAssigned || prevBuffer != sighting->buffer || prevChan != sighting->channel)
 	{
 		Logger::log << "[Sound] assign confirm tag=0x" << std::hex << tagId << std::dec
 			<< " slot=" << slot
-			<< " chan=" << newChan
+			<< " chan=" << sighting->channel
 			<< " buffer=" << sighting->buffer
 			<< std::endl;
 	}
