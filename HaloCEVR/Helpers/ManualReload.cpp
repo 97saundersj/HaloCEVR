@@ -629,7 +629,12 @@ bool ManualReloadController::ShouldSuppressTwoHandAim() const
 		return false;
 	}
 
-	if (bMagazineEjected || bMagazineGrabbed || phase != EManualReloadPhase::Idle)
+	// Keep suppressing after insert until the off-hand grip used to hold the
+	// magazine is released; otherwise a held grip snaps into two-handed aim.
+	if (bSuppressSwapUntilGripRelease
+		|| bMagazineEjected
+		|| bMagazineGrabbed
+		|| phase != EManualReloadPhase::Idle)
 	{
 		return true;
 	}
@@ -665,7 +670,9 @@ void ManualReloadController::TickSwapSuppression()
 	}
 
 	IVR* vr = G().GetVR();
-	if (!vr->GetBoolInput(input.GetSwapWeaponHandInput())
+	// Magazine grab uses TwoHandGrip; swap bindings often share the same button.
+	if (!vr->GetBoolInput(input.GetTwoHandGripInput())
+		&& !vr->GetBoolInput(input.GetSwapWeaponHandInput())
 		&& !vr->GetBoolInput(input.GetOffhandSwapWeaponHandInput()))
 	{
 		bSuppressSwapUntilGripRelease = false;
@@ -955,6 +962,13 @@ void ManualReloadController::ResumeManualReloadAnimation()
 	bMagazineGrabbed = false;
 	bMagazineEjected = false;
 	ClearBoneSnapshot();
+
+	// Insert often happens while grip is still held; don't allow that hold to
+	// become two-handed aim / hand-swap until the button is released.
+	if (G().GetVR()->GetBoolInput(input.GetTwoHandGripInput()))
+	{
+		bSuppressSwapUntilGripRelease = true;
+	}
 
 	Logger::log << "[ManualReload] magazine inserted"
 		<< " weapon=" << WeaponTypeName(cachedWeaponType)
