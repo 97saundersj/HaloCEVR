@@ -16,6 +16,7 @@ struct WeaponManualReloadSettings
 	std::string MagazineBoneName = "frame magazine";
 	bool ContinuousReload = false;
 	uint16_t MagazineCapacity = 0;
+	Vector3 MagazinePouchRotation{};
 };
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(

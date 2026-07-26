@@ -71,7 +71,16 @@ void WeaponManualReloadConfigManager::LoadConfig() const
 			{
 				json merged = base;
 				merged.update(item);
-				weaponList.push_back(merged.get<WeaponManualReloadSettings>());
+				WeaponManualReloadSettings settings = merged.get<WeaponManualReloadSettings>();
+
+				if (const auto it = item.find("MagazinePouchRotation"); it != item.end() && it->is_object())
+				{
+					settings.MagazinePouchRotation.x = it->value("x", 0.0f);
+					settings.MagazinePouchRotation.y = it->value("y", 0.0f);
+					settings.MagazinePouchRotation.z = it->value("z", 0.0f);
+				}
+
+				weaponList.push_back(settings);
 			}
 			catch (...)
 			{

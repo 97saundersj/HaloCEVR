@@ -6,14 +6,16 @@
       "Description": "Pistol",
       "PauseTicks": 25,
       "ResumeTicks": 35,
-      "MagazineBoneName": "frame magazine"
+      "MagazineBoneName": "frame magazine",
+      "MagazinePouchRotation": { "x": 0, "y": 0, "z": -90 }
     },
     {
       "Weapon": 2,
       "Description": "AssaultRifle",
       "PauseTicks": 35,
       "ResumeTicks": 45,
-      "MagazineBoneName": "frame magazine"
+      "MagazineBoneName": "frame magazine",
+      "MagazinePouchRotation": { "x": 0, "y": 0, "z": -90 }
     },
     {
       "Weapon": 3,
@@ -22,21 +24,24 @@
       "ResumeTicks": 10,
       "MagazineBoneName": "frame bullet",
       "ContinuousReload": true,
-      "MagazineCapacity": 12
+      "MagazineCapacity": 12,
+      "MagazinePouchRotation": { "x": 0, "y": 0, "z": 0 }
     },
     {
       "Weapon": 4,
       "Description": "RocketLauncher",
       "PauseTicks": 60,
       "ResumeTicks": 70,
-      "MagazineBoneName": "frame tubes"
+      "MagazineBoneName": "frame tubes",
+      "MagazinePouchRotation": { "x": 180, "y": 90, "z": 0 }
     },
     {
       "Weapon": 5,
       "Description": "Sniper",
       "PauseTicks": 30,
       "ResumeTicks": 45,
-      "MagazineBoneName": "frame magazine"
+      "MagazineBoneName": "frame magazine",
+      "MagazinePouchRotation": { "x": 0, "y": 0, "z": -90 }
     }
   ]
 }

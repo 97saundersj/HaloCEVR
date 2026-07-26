@@ -1198,8 +1198,14 @@ Matrix4 ManualReloadController::GetDetachedMagazineOrientation(const Transform* 
 		return SkeletonAnim::GetRotationMatrix(G().GetVR()->GetControllerTransform(offHand, true));
 	}
 
-	return SkeletonAnim::MakeBeltObjectOrientation(
+	Matrix4 orientation = SkeletonAnim::MakeBeltObjectOrientation(
 		SkeletonAnim::FlattenForwardOnXY(G().GetVR()->GetHMDTransform(true).getForwardAxis()));
+
+	const Vector3 pouchRotation = ReloadSettings(cachedWeaponType).MagazinePouchRotation;
+	orientation.rotateZ(pouchRotation.z);
+	orientation.rotateY(pouchRotation.y);
+	orientation.rotateX(pouchRotation.x);
+	return orientation;
 }
 
 void ManualReloadController::UpdateMagazinePlacement(const HaloID& id, Transform* outBoneTransforms)
