@@ -233,6 +233,10 @@
   <ItemGroup>
     <ClCompile Include="Helpers\CmdLineArgs.cpp" />
     <ClCompile Include="Helpers\Cutscene.cpp" />
+    <ClCompile Include="Helpers\FirstPersonAnim.cpp" />
+    <ClCompile Include="Helpers\SkeletonAnim.cpp" />
+    <ClCompile Include="Helpers\ManualReload.cpp" />
+    <ClCompile Include="Helpers\Sound.cpp" />
     <ClCompile Include="Helpers\Version.cpp" />
     <ClCompile Include="InGameRenderer.cpp" />
     <ClCompile Include="dllmain.cpp" />
@@ -271,6 +275,7 @@
     <ClCompile Include="VR\VREmulator.cpp" />
     <ClCompile Include="WeaponHandler.cpp" />
     <ClCompile Include="WeaponHapticsConfig.cpp" />
+    <ClCompile Include="WeaponManualReloadConfig.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Config\Config.h" />
@@ -296,6 +301,8 @@
     <ClInclude Include="DirectXWrappers\IDirect3D9ExWrapper.h" />
     <ClInclude Include="DirectXWrappers\IDirect3DDevice9ExWrapper.h" />
     <ClInclude Include="InputHandler.h" />
+    <ClInclude Include="Helpers\ManualReload.h" />
+    <ClInclude Include="Helpers\SkeletonAnim.h" />
     <ClInclude Include="Logger.h" />
     <ClInclude Include="Maths\Matrices.h" />
     <ClInclude Include="Profiler.h" />
@@ -318,6 +325,7 @@
     <ClInclude Include="VR\IVR.h" />
     <ClInclude Include="WeaponHandler.h" />
     <ClInclude Include="WeaponHapticsConfig.h" />
+    <ClInclude Include="WeaponManualReloadConfig.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="cpp.hint" />

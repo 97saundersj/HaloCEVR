@@ -39,6 +39,11 @@ public:
 
 	bool IsSniperScope() const;
 
+	WeaponType GetCachedWeaponType() const { return cachedViewModel.weaponType; }
+	int GetLeftWristIndex() const { return cachedViewModel.leftWristIndex; }
+	int GetRightWristIndex() const { return cachedViewModel.rightWristIndex; }
+	int GetGunIndex() const { return cachedViewModel.gunIndex; }
+
 	Vector3 localOffset;
 	Vector3 localRotation;
 
@@ -54,6 +59,10 @@ protected:
 	inline void HandleWeaponHaptics() const;
 
 	inline void TransformToMatrix4(struct Transform& inTransform, class Matrix4& outMatrix) const;
+
+	bool IsFirstPersonWeaponAnimationsAsset(struct AssetData_ModelAnimations* animationData) const;
+	void LogViewModelBoneHierarchy(struct AssetData_ModelAnimations* animationData, const char* weaponAssetPath) const;
+	void LogViewModelBoneHierarchyNode(struct Bone* boneArray, int numBones, int boneIndex, int depth) const;
 
 	inline Vector3 GetScopeLocation(WeaponType Type) const;
 

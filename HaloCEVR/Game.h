@@ -11,8 +11,10 @@
 #include "Maths/Vectors.h"
 #include "WeaponHandler.h"
 #include "InputHandler.h"
+#include "Helpers/ManualReload.h"
 #include "InGameRenderer.h"
 #include "WeaponHapticsConfig.h"
+#include "WeaponManualReloadConfig.h"
 #include "Profiler.h"
 #include "UI/UIRenderer.h"
 #include "UI/SettingsMenu.h"
@@ -23,6 +25,8 @@ class Game
 {
 public:
 	static Game instance;
+
+	Game();
 
 	void Init();
 	void Shutdown();
@@ -85,6 +89,12 @@ public:
 
 	inline IVR* GetVR() const { return vr; }
 
+	ManualReloadController& GetManualReload() { return manualReload; }
+	const ManualReloadController& GetManualReload() const { return manualReload; }
+
+	WeaponHandler& GetWeaponHandler() { return weaponHandler; }
+	const WeaponHandler& GetWeaponHandler() const { return weaponHandler; }
+
 	UINT backBufferWidth = 600;
 	UINT backBufferHeight = 600;
 
@@ -109,6 +119,7 @@ public:
 	bool bDetectedChimera = false;
 	Vector3 LastLookDir;
 	WeaponHapticsConfigManager weaponHapticsConfig;
+	WeaponManualReloadConfigManager weaponManualReloadConfig;
 
 	bool bLoadedConfig = false;
 	bool bSavedConfig = false;
@@ -144,6 +155,7 @@ protected:
 
 	WeaponHandler weaponHandler;
 	InputHandler inputHandler;
+	ManualReloadController manualReload;
 
 	struct FPSTracker
 	{
@@ -237,6 +249,11 @@ public:
 	FloatProperty* c_LeftHandMeleeSwingSpeed = nullptr;
 	FloatProperty* c_RightHandMeleeSwingSpeed = nullptr;
 	FloatProperty* c_CrouchHeight = nullptr;
+	BoolProperty* c_DisableEmptyMagazineAutoReload = nullptr;
+	Vector3Property* c_BeltMagazineOffset = nullptr;
+	FloatProperty* c_BeltMagazineGrabDistance = nullptr;
+	FloatProperty* c_BeltMagazineInsertDistance = nullptr;
+	Vector3Property* c_MagazineGripControllerOffset = nullptr;
 	BoolProperty* c_ShowRoomCentre = nullptr;
 	BoolProperty* c_ToggleGrip = nullptr;
 	FloatProperty* c_TwoHandDistance = nullptr;

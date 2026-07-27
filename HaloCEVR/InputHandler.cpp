@@ -91,6 +91,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
+		Game::instance.GetManualReload().SuppressVanillaReloadControl(controls.Reload);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
@@ -110,6 +111,7 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		ApplyBoolInput(Crouch);
 		ApplyImpulseBoolInput(Zoom);
 		ApplyBoolInput(Reload);
+		Game::instance.GetManualReload().SuppressVanillaReloadControl(controls.Reload);
 
 		Game::instance.bIsFiring = controls.Fire;
 	}
@@ -246,6 +248,8 @@ void InputHandler::UpdateInputs(bool bInVehicle)
 		input.ki.dwFlags |= KEYEVENTF_KEYUP;
 		SendInput(1, &input, sizeof(INPUT));
 	}
+
+	Game::instance.GetManualReload().Update();
 
 	UpdateHandsProximity();
 
@@ -622,6 +626,8 @@ void InputHandler::CalculateSmoothedInput()
 
 void InputHandler::UpdateHandsProximity()
 {
+	Game::instance.GetManualReload().TickSwapSuppression();
+
 	float swapHandDistance = Game::instance.c_SwapHandDistance->Value();
 	
 	const Vector3 leftPos = Game::instance.GetVR()->GetControllerTransform(ControllerRole::Left, true) * Vector3(0.0f, 0.0f, 0.0f);
@@ -640,6 +646,11 @@ void InputHandler::UpdateHandsProximity()
 
 void InputHandler::CheckSwapWeaponHand()
 {
+	if (Game::instance.GetManualReload().ShouldSkipWeaponHandSwap())
+	{
+		return;
+	}
+
 	IVR* vr = Game::instance.GetVR();
 
 	bool bWeaponHandChanged;
@@ -674,6 +685,13 @@ void InputHandler::UpdateTwoHandedHold(float handDistance, bool handsWithinSwapW
 {
 	// Two hand aim is disabled when 3DOF is enabled.
 	if (Game::instance.bUse3DOFAiming) {
+		Game::instance.bUseTwoHandAim = false;
+		return;
+	}
+
+	// Off-hand grip is used to grab the ejected magazine during manual reload.
+	if (Game::instance.GetManualReload().ShouldSuppressTwoHandAim())
+	{
 		Game::instance.bUseTwoHandAim = false;
 		return;
 	}

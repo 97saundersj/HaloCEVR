@@ -1,0 +1,158 @@
+#pragma once
+
+#include <cstdint>
+#include "../Maths/Matrices.h"
+#include "../Maths/Vectors.h"
+#include "../WeaponHandler.h"
+#include "Maths.h"
+#include "Objects.h"
+#include "SkeletonAnim.h"
+
+enum class EManualReloadPhase
+{
+	Idle,
+	PlayingEject,
+	PausedAtEject,
+	PlayingFinish
+};
+
+class InputHandler;
+struct AssetData_ModelAnimations;
+struct Bone;
+
+class ManualReloadController
+{
+public:
+	explicit ManualReloadController(InputHandler& inputHandler);
+
+	// InputHandler
+	void Update();
+	void SuppressVanillaReloadControl(unsigned char& reloadControl) const;
+	bool ShouldSuppressTwoHandAim() const;
+	bool ShouldSkipWeaponHandSwap() const;
+	void TickSwapSuppression();
+
+	// Game
+	void OnReloadEnd();
+
+	// Hooks
+	bool ShouldBlockAutoReloadStart() const;
+	void OnPreHandleInputs();
+
+	// WeaponHandler — cache reload metadata when the view-model asset changes.
+	void OnViewModelCached(const HaloID& id, AssetData_ModelAnimations* animationData, WeaponType weaponType);
+	void PreSkeleton(const HaloID& id, TransformQuat* boneTransforms);
+	void PostSkeleton(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, Transform* outBoneTransforms);
+
+	// Idle foregrip wrist delta captured at reload start; used while pinned at eject.
+	bool TryGetCachedTwoHandGripDelta(Matrix4& outDelta) const;
+
+private:
+	InputHandler& input;
+
+	// View-model reload metadata (owned here, not on WeaponHandler).
+	HaloID cachedViewModelAsset{ 0, 0 };
+	WeaponType cachedWeaponType = WeaponType::Unknown;
+	bool magazineHideBones[64]{};
+	bool bHasMagazineBones = false;
+	int magazineRootBoneIndex = -1;
+	int reloadEmptyAnimIndex = -1;
+	int reloadExitEmptyAnimIndex = -1;
+	int reloadFullAnimIndex = -1;
+	int reloadExitFullAnimIndex = -1;
+	uint16_t magazineCapacity = 0;
+
+	EManualReloadPhase phase = EManualReloadPhase::Idle;
+	bool bMagazineEjected = false;
+	bool bMagazineGrabbed = false;
+	bool bManualReloadPending = false;
+	bool bManualReloadFromEmpty = false;
+	bool bShotgunShellSessionActive = false;
+	bool bShotgunShellSessionUserCancelled = false;
+	uint16_t pausedReloadAnimIndex = 0;
+	uint16_t pausedReloadAnimFrame = 0;
+	uint16_t frozenReloadRemaining = 0;
+	uint16_t initialReloadRemaining = 0;
+
+	bool bBeltGripStartedReload = false;
+	bool bSuppressSwapUntilGripRelease = false;
+	bool bWasOffHandNearBelt = false;
+	int finishFrameCounter = 0;
+
+	// Bone pin / record-replay (engine FP reload is not seekable).
+	SkeletonAnim::SampleBuffer boneReplay;
+	float replaySkipSeconds = 0.0f;
+	int lastBonePinPhase = 0;
+	TransformQuat lastAnimQuats[SkeletonAnim::kMaxBones]{};
+	bool bHasLastAnimQuats = false;
+
+	// Mag-well insert target (gun-local at reload start).
+	bool bHasReloadStartMagSocket = false;
+	Vector3 reloadStartMagLocalOffset{};
+	Vector3 magazineSocketPosition{};
+
+	// Magazine-in-wrist local pose (pause keyframe for shells, resume for mags).
+	bool bHasCapturedGrip = false;
+	Matrix4 gripFromWristLocal;
+
+	// Pre-reload foregrip: inv(rightWrist) * leftWrist from Idle anim.
+	bool bHasCachedTwoHandGripDelta = false;
+	Matrix4 cachedTwoHandGripDelta;
+
+	void ResetState();
+	void ResetCycle();
+	void ResetCycleCore();
+	void EndShotgunShellSession();
+	void ClearReloadMetadata();
+	void CacheReloadMetadata(const HaloID& id, AssetData_ModelAnimations* animationData, WeaponType weaponType);
+	void MarkMagazineBone(int boneIndex);
+	void MarkMagazineDescendants(Bone* boneArray, int numBones, int rootIndex);
+	void CacheTwoHandGripDeltaFromLastAnim();
+
+	bool HasMagazineBones() const { return bHasMagazineBones; }
+	bool IsMagazineBone(int boneIndex) const;
+	int GetMagazineRootBoneIndex() const;
+	bool IsLocalMagazineEmpty() const;
+	bool IsShellByShellReloadWeapon() const;
+	bool CanLoadAnotherShell() const;
+	bool ShouldContinueContinuousReloadSession() const;
+	bool ShouldAutoStartContinuousReloadSession() const;
+	bool ShouldShowBeltMagazine() const;
+	int GetActiveReloadAnimIndex() const;
+	bool IsLocalViewModel(const HaloID& id) const;
+
+	void TriggerWeaponReload();
+	void TriggerWeaponReloadEnd();
+	void BeginManualReload();
+	void BeginChainedShellReload();
+	void ResumeManualReloadAnimation();
+	void HandleManualMagazineGrabInsert();
+	void TryBeginShotgunLoadFromBelt();
+	void SuspendShotgunActiveReloadForFire();
+	bool ShouldSuspendShotgunActiveReloadForFire() const;
+
+	void ApplyAnimPin();
+	void EnterPausedAtEject(WeaponDynamicObject* weaponObject, bool bAdvanceReloadRemaining);
+	void UpdateReloadAnimationPause();
+	void ApplyBonePin(const HaloID& id, TransformQuat* boneTransforms);
+	void ForceMagazineBoneVisible(TransformQuat* boneTransforms) const;
+	void UpdateMagazinePlacement(const HaloID& id, Transform* outBoneTransforms);
+	void CaptureReloadStartInsertSocket(const Transform* outBoneTransforms);
+	void UpdateInsertSocketFromGun(const Transform* outBoneTransforms);
+	void UpdateGripFromAnimPose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up);
+	void ClearBoneSnapshot();
+	void ResetBonePinState();
+	void ClearReloadStartInsertSocket();
+
+	Vector3 GetBeltMagazineWorldPosition() const;
+	Vector3 GetOffHandWorldPosition() const;
+	Vector3 GetMagazineGripWorldOffset() const;
+	bool GetOffHandNearBelt(bool& gripHeld, bool& gripChanged) const;
+	bool GetGrabbedMagazineTargetMatrix(const Transform* outBoneTransforms, Matrix4& outTargetMatrix) const;
+	Matrix4 GetDetachedMagazineOrientation(const Transform* outBoneTransforms) const;
+
+	void BeginSoundCapture();
+	void PauseSounds();
+	void ClearSounds(float skipSeconds = 0.0f);
+	void ResumeSounds(bool bStopActiveSources);
+};

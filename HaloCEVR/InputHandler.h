@@ -15,6 +15,12 @@ public:
 	bool GetCalculatedHandPositions(Matrix4& controllerTransform, Vector3& dominantHandPos, Vector3& offHand);
 	void CalculateSmoothedInput();
 
+	InputBindingID GetReloadInput() const { return Reload; }
+	InputBindingID GetTwoHandGripInput() const { return TwoHandGrip; }
+	InputBindingID GetFireInput() const { return Fire; }
+	InputBindingID GetSwapWeaponHandInput() const { return SwapWeaponHand; }
+	InputBindingID GetOffhandSwapWeaponHandInput() const { return OffhandSwapWeaponHand; }
+
 	Vector3 smoothedPosition = Vector3(0.0f, 0.0f, 0.0f);
 
 	// Track previous yaw offset to detect snap turns for weapon position smoothing

@@ -3,6 +3,8 @@
 #include "../Helpers/Renderer.h"
 #include "../Helpers/DX9.h"
 #include "../Helpers/Cutscene.h"
+#include "../Helpers/FirstPersonAnim.h"
+#include "../Helpers/Sound.h"
 #include "../Game.h"
 #include "../Helpers/Menus.h"
 #include "../Helpers/Maths.h"
@@ -40,6 +42,21 @@ void Hooks::InitHooks()
 	RESOLVEINDIRECT(IsWindowed);
 	RESOLVEINDIRECT(CutsceneData);
 	RESOLVEINDIRECT(CampaignLoading);
+	RESOLVEINDIRECT(SoundsGlobal);
+	RESOLVEINDIRECT(SoundPlaybackPool);
+	RESOLVEINDIRECT(SoundBufferArray);
+
+	{
+		Offset drawViewModel = o.DrawViewModel;
+		if (SigScanner::UpdateOffset(drawViewModel, false) >= 0)
+		{
+			Helpers::InitFirstPersonAnimBase(static_cast<uintptr_t>(drawViewModel.Address));
+		}
+		else
+		{
+			Logger::err << "[Hook] Failed to resolve DrawViewModel for FirstPersonAnimBase" << std::endl;
+		}
+	}
 
 	CREATEHOOK(InitDirectX);
 	CREATEHOOK(DrawFrame);
@@ -61,6 +78,9 @@ void Hooks::InitHooks()
 	CREATEHOOK(DrawViewModel);
 	CREATEHOOK(ReloadStart);
 	CREATEHOOK(ReloadEnd);
+	CREATEHOOK(SoundStart);
+	CREATEHOOK(SoundChannelAssign);
+	CREATEHOOK(SoundChannelAssign2);
 
 	// These are handled with a direct patch, so manually scan them
 	SigScanner::UpdateOffset(o.CutsceneFPSCap);
@@ -112,6 +132,11 @@ void Hooks::EnableAllHooks()
 	DrawViewModel.EnableHook();
 	ReloadStart.EnableHook();
 	ReloadEnd.EnableHook();
+	SoundStart.EnableHook();
+	SoundChannelAssign.EnableHook();
+	SoundChannelAssign2.EnableHook();
+
+	Helpers::InitSoundHook();
 
 	Freeze();
 
@@ -328,6 +353,12 @@ bool Hooks::H_InitDirectX()
 void Hooks::H_DrawFrame(Renderer* param1, short param2, short* param3, float tickProgress, float deltaTime)
 {
 	VR_PROFILE_SCOPE(Hooks_DrawFrame);
+
+	if (!Helpers::IsSoundHookActive())
+	{
+		Helpers::InitSoundHook();
+	}
+
 	/*
 	In order to get each perspective (left eye, right eye, PiP scope, mirror [todo: just blit an eye for the mirror])
 	we need to call the draw function multiple times, but should take care to avoid creating multiple d3d scenes as
@@ -616,6 +647,8 @@ void __declspec(naked) Hooks::H_SetViewModelPosition()
 
 void Hooks::H_HandleInputs()
 {
+	Game::instance.GetManualReload().OnPreHandleInputs();
+
 	HandleInputs.Original();
 
 	Game::instance.UpdateInputs();
@@ -900,9 +933,43 @@ void Hooks::H_ReloadStart(HaloID param1, short param2, bool param3)
 {
 	VR_PROFILE_SCOPE(Hooks_ReloadStart);
 
-	ReloadStart.Original(param1, param2, param3);
+	// Block auto-reload from starting.
+	if (Game::instance.GetManualReload().ShouldBlockAutoReloadStart())
+	{
+		return;
+	}
+
+	CallReloadStart(param1, param2, param3);
 
 	Game::instance.ReloadStart(param1, param2, param3);
+}
+
+void Hooks::CallReloadStart(HaloID param1, short param2, bool param3)
+{
+	ReloadStart.Original(param1, param2, param3);
+}
+
+void Hooks::CallReloadEnd(short magazineIndex, HaloID weaponObjectId)
+{
+	_asm
+	{
+		mov cx, magazineIndex
+	}
+
+	const HaloID idCopy = weaponObjectId;
+	_asm
+	{
+		push idCopy
+	}
+
+	ReloadEnd.Original();
+
+	_asm
+	{
+		add esp, 4
+	}
+
+	Game::instance.ReloadEnd(magazineIndex, weaponObjectId);
 }
 
 void __declspec(naked) Hooks::H_ReloadEnd()
@@ -929,6 +996,30 @@ void __declspec(naked) Hooks::H_ReloadEnd()
 		add esp, 0x4
 		ret;
 	}
+}
+
+int Hooks::H_SoundStart(uint32_t tagId, void* source, int a3, int a4, int a5, int a6, int a7)
+{
+	const int slot = SoundStart.Original(tagId, source, a3, a4, a5, a6, a7);
+	// Retail returns a slot index in the low word (-1 on failure).
+	const int slotIndex = slot & 0xFFFF;
+	if (slotIndex != 0xFFFF)
+	{
+		Helpers::OnSoundStarted(slotIndex, tagId);
+	}
+	return slot;
+}
+
+void Hooks::H_SoundChannelAssign(short slot, float param2)
+{
+	SoundChannelAssign.Original(slot, param2);
+	Helpers::OnSoundChannelAssigned(slot);
+}
+
+void Hooks::H_SoundChannelAssign2(short slot, float param2)
+{
+	SoundChannelAssign2.Original(slot, param2);
+	Helpers::OnSoundChannelAssigned(slot);
 }
 
 //================================//Patches//================================//

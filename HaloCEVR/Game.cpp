@@ -23,6 +23,11 @@
 #include "Helpers/Version.h"
 #include "Helpers/Cutscene.h"
 
+Game::Game()
+	: manualReload(inputHandler)
+{
+}
+
 void Game::Init()
 {
 	Logger::log << "[Game] HaloCEVR initialising..." << std::endl;
@@ -897,8 +902,7 @@ void Game::ReloadEnd(short param1, HaloID param2)
 		return;
 	}
 
-	bIsReloading = false;
-	//Logger::log << "Reload End" << std::endl;
+	GetManualReload().OnReloadEnd();
 }
 
 Vector3 Game::GetSmoothedInput() const
@@ -1092,6 +1096,12 @@ void Game::SetupConfigs()
 	c_LeftShoulderHolsterOffset = config.RegisterVector3("LeftShoulderHolsterOffset", "The (foward, left, up) Offset of the left shoulder holster relative to the headset's location", Vector3(-0.15f, 0.25f, -0.25f));
 	c_RightShoulderHolsterActivationDistance = config.RegisterFloat("RightShoulderHolsterDistance", "The 'size' of the right shoulder holster. This is the distance that the dominant hand needs to be from the holster to change weapons (<0 to disable)", 0.3f);
 	c_RightShoulderHolsterOffset = config.RegisterVector3("RightShoulderHolsterOffset", "The (foward, left, up) Offset of the right shoulder holster relative to the headset's location", Vector3(-0.15f, -0.25f, -0.25f));
+	// Manual reload settings
+	c_DisableEmptyMagazineAutoReload = config.RegisterBool("DisableEmptyMagazineAutoReload", "When enabled, auto-reload on empty is disabled and you manually reload by pressing reload, grabbing the belt magazine, and inserting it. Works for empty and tactical (partial mag) reloads in 6DOF mode", false);
+	c_BeltMagazineOffset = config.RegisterVector3("BeltMagazineOffset", "The (forward, left, up) offset of the spare magazine on your hip relative to the headset, in metres. Use a negative up value for hip height (e.g. -0.55)", Vector3(0.05f, 0.28f, -0.55f));
+	c_BeltMagazineGrabDistance = config.RegisterFloat("BeltMagazineGrabDistance", "How close the off-hand must be to the belt magazine to grab it (metres)", 0.1f);
+	c_BeltMagazineInsertDistance = config.RegisterFloat("BeltMagazineInsertDistance", "How close the off-hand must be to the weapon magazine socket to insert and reload (metres)", 0.08f);
+	c_MagazineGripControllerOffset = config.RegisterVector3("MagazineGripControllerOffset", "Global fine-tune offset (forward, left, up in metres) applied in controller-local space after the animation-derived grip pose", Vector3(0.0f, 0.0f, 0.0f));
 	// Misc settings
 	c_ShowRoomCentre = config.RegisterBool("ShowRoomCentre", "Draw an indicator at your feet to show where the player character is actually positioned", true);
 	c_d3d9Path = config.RegisterString("CustomD3D9Path", "If set first try to load d3d9.dll from the specified path instead of from system32", "");

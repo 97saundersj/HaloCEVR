@@ -7,6 +7,8 @@
 #include "Game.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <string>
 
 // This is a working decomp of the game's original logic for updating the view model's skeleton
 // Only kept here for reference when working on the replacement function below
@@ -55,6 +57,39 @@ static void ReferenceUpdateViewModelImpl(HaloID& id, Vector3* pos, Vector3* faci
 
 		} while (i != lastIndex);
 	}
+}
+
+bool WeaponHandler::IsFirstPersonWeaponAnimationsAsset(AssetData_ModelAnimations* animationData) const
+{
+	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0)
+	{
+		return false;
+	}
+
+	bool hasFrameGun = false;
+	bool hasFrameRWrist = false;
+	const int numBones = std::min(animationData->NumBones, 128);
+
+	for (int i = 0; i < numBones; i++)
+	{
+		const char* name = animationData->BoneArray[i].BoneName;
+		if (!name[0])
+		{
+			continue;
+		}
+
+		if (strstr(name, "frame gun") != nullptr)
+		{
+			hasFrameGun = true;
+		}
+
+		if (strstr(name, "r wrist") != nullptr)
+		{
+			hasFrameRWrist = true;
+		}
+	}
+
+	return hasFrameGun && hasFrameRWrist;
 }
 
 void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, TransformQuat* boneTransforms, Transform* outBoneTransforms)
@@ -166,13 +201,19 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 	}
 
 	Asset_ModelAnimations* viewModel = Helpers::GetTypedAsset<Asset_ModelAnimations>(id);
-	if (!viewModel)
+	if (!viewModel || !viewModel->Data)
 	{
 		Logger::log << "[UpdateViewModel] Can't get view model asset" << std::endl;
 		return;
 	}
 
 	AssetData_ModelAnimations* animationData = viewModel->Data;
+	if (!IsFirstPersonWeaponAnimationsAsset(animationData))
+	{
+		ReferenceUpdateViewModelImpl(id, pos, facing, up, boneTransforms, outBoneTransforms);
+		return;
+	}
+
 	Bone* boneArray = animationData->BoneArray;
 
 	Transform root;
@@ -184,6 +225,8 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 	{
 		UpdateCache(id, animationData);
 	}
+
+	Game::instance.GetManualReload().PreSkeleton(id, boneTransforms);
 
 	Transform unmodifiedHandTransform;
 	CalculateBoneTransform(cachedViewModel.rightWristIndex, boneArray, root, boneTransforms, unmodifiedHandTransform);
@@ -202,6 +245,11 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 		{
 			const int16_t boneIndex = bonesToProcess[i];
 			i++;
+			if (boneIndex < 0 || boneIndex >= animationData->NumBones || boneIndex >= 64)
+			{
+				continue;
+			}
+
 			const Bone& currentBone = boneArray[boneIndex];
 			Transform* parentTransform = boneIndex == 0 ? &root : &outBoneTransforms[currentBone.Parent];
 			const TransformQuat* currentQuat = &boneTransforms[boneIndex];
@@ -333,6 +381,14 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 						rightMatrix.invertAffine();
 						Matrix4 deltaMatrix = rightMatrix * leftMatrix;
 
+						// While mag/shell is ejected the FP anim is pinned on the reload
+						// keyframe — use the Idle foregrip cached at reload start.
+						Matrix4 gripDelta = deltaMatrix;
+						if (Game::instance.GetManualReload().TryGetCachedTwoHandGripDelta(gripDelta))
+						{
+							deltaMatrix = gripDelta;
+						}
+
 						if (Game::instance.bLeftHanded)
 						{
 							Matrix4 flip;
@@ -401,12 +457,12 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 			}
 #endif
 
-			if (currentBone.LeftLeaf != -1)
+			if (currentBone.LeftLeaf != -1 && lastIndex < 64)
 			{
 				bonesToProcess[lastIndex] = currentBone.LeftLeaf;
 				lastIndex++;
 			}
-			if (currentBone.RightLeaf != -1)
+			if (currentBone.RightLeaf != -1 && lastIndex < 64)
 			{
 				bonesToProcess[lastIndex] = currentBone.RightLeaf;
 				lastIndex++;
@@ -414,6 +470,8 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 
 		} while (i != lastIndex);
 	}
+
+	Game::instance.GetManualReload().PostSkeleton(id, pos, facing, up, outBoneTransforms);
 }
 
 inline void WeaponHandler::CalculateBoneTransform(int boneIndex, Bone* boneArray, Transform& root, TransformQuat* boneTransforms, Transform& outTransform) const
@@ -509,8 +567,57 @@ void WeaponHandler::MoveBoneToTransform(int boneIndex, const Matrix4& newTransfo
 	realTransforms[boneIndex] = outBoneTransforms[boneIndex]; // Re-cache value to use updated position
 }
 
+void WeaponHandler::LogViewModelBoneHierarchyNode(Bone* boneArray, int numBones, int boneIndex, int depth) const
+{
+	if (boneIndex < 0 || boneIndex >= numBones || depth > 64)
+	{
+		return;
+	}
+
+	std::string indent(static_cast<size_t>(depth) * 2, ' ');
+	const Bone& bone = boneArray[boneIndex];
+
+	Logger::log << "[WeaponHandler] " << indent << "[" << boneIndex << "] " << bone.BoneName << std::endl;
+
+	LogViewModelBoneHierarchyNode(boneArray, numBones, bone.LeftLeaf, depth + 1);
+	LogViewModelBoneHierarchyNode(boneArray, numBones, bone.RightLeaf, depth + 1);
+}
+
+void WeaponHandler::LogViewModelBoneHierarchy(AssetData_ModelAnimations* animationData, const char* weaponAssetPath) const
+{
+	if (!animationData || !animationData->BoneArray)
+	{
+		return;
+	}
+
+	Bone* boneArray = animationData->BoneArray;
+	const int numBones = animationData->NumBones;
+
+	Logger::log << "[WeaponHandler] === View model bone hierarchy";
+	if (weaponAssetPath && weaponAssetPath[0])
+	{
+		Logger::log << " weapon=" << weaponAssetPath;
+	}
+	Logger::log << " ===" << std::endl;
+	Logger::log << "[WeaponHandler] Bone count: " << numBones << std::endl;
+
+	if (numBones > 0)
+	{
+		LogViewModelBoneHierarchyNode(boneArray, numBones, 0, 0);
+	}
+
+	Logger::log << "[WeaponHandler] === End bone hierarchy ===" << std::endl;
+}
+
 void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animationData)
 {
+	if (!animationData || !animationData->BoneArray || animationData->NumBones <= 0 || animationData->NumBones > 256)
+	{
+		Logger::log << "[UpdateCache] Invalid animation data for asset " << id << std::endl;
+		Game::instance.GetManualReload().OnViewModelCached(id, nullptr, WeaponType::Unknown);
+		return;
+	}
+
 #if DRAW_DEBUG_AIM
 	Logger::log << "[UpdateCache] Swapped weapons, recaching " << id << std::endl;
 #endif
@@ -519,6 +626,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	cachedViewModel.rightWristIndex = -1;
 	cachedViewModel.gunIndex = -1;
 	cachedViewModel.displayIndex = -1;
+	cachedViewModel.weaponType = WeaponType::Unknown;
 
 	Bone* boneArray = animationData->BoneArray;
 
@@ -569,6 +677,25 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 #endif
 	}
 
+	{
+		std::string weaponAssetPath;
+		BaseDynamicObject* player = Helpers::GetLocalPlayer();
+		if (player)
+		{
+			BaseDynamicObject* weaponObj = Helpers::GetDynamicObject(player->weapon);
+			if (weaponObj)
+			{
+				Asset_Weapon* weapon = Helpers::GetTypedAsset<Asset_Weapon>(weaponObj->tagID);
+				if (weapon)
+				{
+					weaponAssetPath = weapon->WeaponAsset;
+				}
+			}
+		}
+
+		LogViewModelBoneHierarchy(animationData, weaponAssetPath.empty() ? nullptr : weaponAssetPath.c_str());
+	}
+
 	cachedViewModel.fireOffset = Vector3();
 	cachedViewModel.cookedFireOffset = Vector3();
 	cachedViewModel.cookedFireRotation = Matrix3();
@@ -582,6 +709,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	if (!player)
 	{
 		Logger::log << "[UpdateCache] Can't find local player" << std::endl;
+		Game::instance.GetManualReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
 		return;
 	}
 
@@ -590,6 +718,7 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	{
 		Logger::log << "[UpdateCache] Can't find weapon from WeaponID " << player->weapon << std::endl;
 		Logger::log << "[UpdateCache] Player Tag = " << player->tagID << std::endl;
+		Game::instance.GetManualReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
 		return;
 	}
 
@@ -597,10 +726,12 @@ void WeaponHandler::UpdateCache(HaloID& id, AssetData_ModelAnimations* animation
 	if (!weapon)
 	{
 		Logger::log << "[UpdateCache] Can't find weapon asset from TagID " << weaponObj->tagID << std::endl;
+		Game::instance.GetManualReload().OnViewModelCached(id, animationData, WeaponType::Unknown);
 		return;
 	}
 
 	cachedViewModel.weaponType = GetWeaponType(weapon);
+	Game::instance.GetManualReload().OnViewModelCached(id, animationData, cachedViewModel.weaponType);
 
 	if (!weapon->WeaponData)
 	{
