@@ -84,6 +84,7 @@ ManualReloadController::ManualReloadController(InputHandler& inputHandler)
 	: input(inputHandler)
 {
 	gripFromWristLocal.identity();
+	cachedTwoHandGripDelta.identity();
 }
 
 void ManualReloadController::BeginSoundCapture()
@@ -195,6 +196,8 @@ void ManualReloadController::ResetState()
 	bBeltGripStartedReload = false;
 	bWasOffHandNearBelt = false;
 	bShotgunShellSessionActive = false;
+	bHasCachedTwoHandGripDelta = false;
+	cachedTwoHandGripDelta.identity();
 	ResetCycleCore();
 }
 
@@ -223,6 +226,8 @@ void ManualReloadController::ClearReloadMetadata()
 	reloadExitFullAnimIndex = -1;
 	magazineCapacity = 0;
 	memset(magazineHideBones, 0, sizeof(magazineHideBones));
+	bHasCachedTwoHandGripDelta = false;
+	cachedTwoHandGripDelta.identity();
 }
 
 void ManualReloadController::MarkMagazineBone(int boneIndex)
@@ -636,6 +641,58 @@ bool ManualReloadController::GetOffHandNearBelt(bool& gripHeld, bool& gripChange
 	return (offHandPos - beltPos).lengthSqr() < grabDistanceSqr;
 }
 
+void ManualReloadController::CacheTwoHandGripDeltaFromLastAnim()
+{
+	bHasCachedTwoHandGripDelta = false;
+	cachedTwoHandGripDelta.identity();
+
+	if (!bHasLastAnimQuats)
+	{
+		return;
+	}
+
+	const int leftWrist = WH().GetLeftWristIndex();
+	const int rightWrist = WH().GetRightWristIndex();
+	if (leftWrist < 0 || rightWrist < 0)
+	{
+		return;
+	}
+
+	Asset_ModelAnimations* viewModel = Helpers::GetTypedAsset<Asset_ModelAnimations>(cachedViewModelAsset);
+	if (!viewModel || !viewModel->Data)
+	{
+		return;
+	}
+
+	// Root cancels in inv(right)*left; any valid basis works.
+	Vector3 pos(0.0f, 0.0f, 0.0f);
+	Vector3 facing(1.0f, 0.0f, 0.0f);
+	Vector3 up(0.0f, 0.0f, 1.0f);
+	Transform poseBones[SkeletonAnim::kMaxBones]{};
+	HaloID viewModelId = cachedViewModelAsset;
+	SkeletonAnim::EvaluatePose(viewModelId, &pos, &facing, &up, lastAnimQuats, poseBones);
+
+	Matrix4 leftMatrix;
+	Matrix4 rightMatrix;
+	SkeletonAnim::TransformToMatrix4(poseBones[leftWrist], leftMatrix);
+	SkeletonAnim::TransformToMatrix4(poseBones[rightWrist], rightMatrix);
+	rightMatrix.invertAffine();
+
+	cachedTwoHandGripDelta = rightMatrix * leftMatrix;
+	bHasCachedTwoHandGripDelta = true;
+}
+
+bool ManualReloadController::TryGetCachedTwoHandGripDelta(Matrix4& outDelta) const
+{
+	if (phase != EManualReloadPhase::PausedAtEject || !bHasCachedTwoHandGripDelta)
+	{
+		return false;
+	}
+
+	outDelta = cachedTwoHandGripDelta;
+	return true;
+}
+
 bool ManualReloadController::ShouldSuppressTwoHandAim() const
 {
 	if (!G().c_DisableEmptyMagazineAutoReload->Value())
@@ -645,19 +702,16 @@ bool ManualReloadController::ShouldSuppressTwoHandAim() const
 
 	// Keep suppressing after insert until the off-hand grip used to hold the
 	// magazine is released; otherwise a held grip snaps into two-handed aim.
-	if (bSuppressSwapUntilGripRelease
-		|| bMagazineEjected
-		|| bMagazineGrabbed
-		|| phase != EManualReloadPhase::Idle)
+	// Also suppress while holding a mag/shell, or during eject/finish anims.
+	// PausedAtEject (and shotgun between-shell Idle) allow two-hand aim unless
+	// the off-hand is near the belt/pouch for a grab.
+	if (bSuppressSwapUntilGripRelease || bMagazineGrabbed)
 	{
 		return true;
 	}
 
-	// While shell-by-shell reload is active, off-hand grip is for the pouch —
-	// never treat it as two-hand aim (that eats the first grab press).
-	if (IsShellByShellReloadWeapon()
-		&& bShotgunShellSessionActive
-		&& CanLoadAnotherShell())
+	if (phase == EManualReloadPhase::PlayingEject
+		|| phase == EManualReloadPhase::PlayingFinish)
 	{
 		return true;
 	}
@@ -972,6 +1026,9 @@ void ManualReloadController::BeginChainedShellReload()
 	{
 		return;
 	}
+
+	// Capture Idle foregrip before the eject anim replaces the wrist pose.
+	CacheTwoHandGripDeltaFromLastAnim();
 
 	bManualReloadFromEmpty = IsLocalMagazineEmpty();
 	bManualReloadPending = true;

@@ -44,6 +44,9 @@ public:
 	void PreSkeleton(const HaloID& id, TransformQuat* boneTransforms);
 	void PostSkeleton(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, Transform* outBoneTransforms);
 
+	// Idle foregrip wrist delta captured at reload start; used while pinned at eject.
+	bool TryGetCachedTwoHandGripDelta(Matrix4& outDelta) const;
+
 private:
 	InputHandler& input;
 
@@ -92,6 +95,10 @@ private:
 	bool bHasCapturedGrip = false;
 	Matrix4 gripFromWristLocal;
 
+	// Pre-reload foregrip: inv(rightWrist) * leftWrist from Idle anim.
+	bool bHasCachedTwoHandGripDelta = false;
+	Matrix4 cachedTwoHandGripDelta;
+
 	void ResetState();
 	void ResetCycle();
 	void ResetCycleCore();
@@ -100,6 +107,7 @@ private:
 	void CacheReloadMetadata(const HaloID& id, AssetData_ModelAnimations* animationData, WeaponType weaponType);
 	void MarkMagazineBone(int boneIndex);
 	void MarkMagazineDescendants(Bone* boneArray, int numBones, int rootIndex);
+	void CacheTwoHandGripDeltaFromLastAnim();
 
 	bool HasMagazineBones() const { return bHasMagazineBones; }
 	bool IsMagazineBone(int boneIndex) const;

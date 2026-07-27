@@ -381,6 +381,14 @@ void WeaponHandler::UpdateViewModel(HaloID& id, Vector3* pos, Vector3* facing, V
 						rightMatrix.invertAffine();
 						Matrix4 deltaMatrix = rightMatrix * leftMatrix;
 
+						// While mag/shell is ejected the FP anim is pinned on the reload
+						// keyframe — use the Idle foregrip cached at reload start.
+						Matrix4 gripDelta = deltaMatrix;
+						if (Game::instance.GetManualReload().TryGetCachedTwoHandGripDelta(gripDelta))
+						{
+							deltaMatrix = gripDelta;
+						}
+
 						if (Game::instance.bLeftHanded)
 						{
 							Matrix4 flip;
