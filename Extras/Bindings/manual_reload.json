@@ -20,7 +20,7 @@
     {
       "Weapon": 3,
       "Description": "Shotgun",
-      "PauseTicks": 5,
+      "PauseTicks": 7,
       "ResumeTicks": 10,
       "MagazineBoneName": "frame bullet",
       "ContinuousReload": true,

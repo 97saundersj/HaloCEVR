@@ -73,19 +73,22 @@ private:
 
 	bool bBeltGripStartedReload = false;
 	bool bSuppressSwapUntilGripRelease = false;
+	bool bWasOffHandNearBelt = false;
 	int finishFrameCounter = 0;
 
 	// Bone pin / record-replay (engine FP reload is not seekable).
 	SkeletonAnim::SampleBuffer boneReplay;
 	float replaySkipSeconds = 0.0f;
 	int lastBonePinPhase = 0;
+	TransformQuat lastAnimQuats[SkeletonAnim::kMaxBones]{};
+	bool bHasLastAnimQuats = false;
 
 	// Mag-well insert target (gun-local at reload start).
 	bool bHasReloadStartMagSocket = false;
 	Vector3 reloadStartMagLocalOffset{};
 	Vector3 magazineSocketPosition{};
 
-	// Magazine-in-wrist local pose from the resume-tick animation frame.
+	// Magazine-in-wrist local pose (pause keyframe for shells, resume for mags).
 	bool bHasCapturedGrip = false;
 	Matrix4 gripFromWristLocal;
 
@@ -121,12 +124,14 @@ private:
 	bool ShouldSuspendShotgunActiveReloadForFire() const;
 
 	void ApplyAnimPin();
+	void EnterPausedAtEject(WeaponDynamicObject* weaponObject, bool bAdvanceReloadRemaining);
 	void UpdateReloadAnimationPause();
 	void ApplyBonePin(const HaloID& id, TransformQuat* boneTransforms);
+	void ForceMagazineBoneVisible(TransformQuat* boneTransforms) const;
 	void UpdateMagazinePlacement(const HaloID& id, Transform* outBoneTransforms);
 	void CaptureReloadStartInsertSocket(const Transform* outBoneTransforms);
 	void UpdateInsertSocketFromGun(const Transform* outBoneTransforms);
-	void CaptureGripFromResumePose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up);
+	void UpdateGripFromAnimPose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up);
 	void ClearBoneSnapshot();
 	void ResetBonePinState();
 	void ClearReloadStartInsertSocket();

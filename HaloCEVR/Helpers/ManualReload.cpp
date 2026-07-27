@@ -157,6 +157,7 @@ void ManualReloadController::ResetBonePinState()
 {
 	boneReplay.Reset();
 	lastBonePinPhase = 0;
+	bHasLastAnimQuats = false;
 	bHasCapturedGrip = false;
 	gripFromWristLocal.identity();
 }
@@ -192,6 +193,7 @@ void ManualReloadController::ResetCycleCore()
 void ManualReloadController::ResetState()
 {
 	bBeltGripStartedReload = false;
+	bWasOffHandNearBelt = false;
 	bShotgunShellSessionActive = false;
 	ResetCycleCore();
 }
@@ -199,6 +201,7 @@ void ManualReloadController::ResetState()
 void ManualReloadController::ResetCycle()
 {
 	bBeltGripStartedReload = false;
+	bWasOffHandNearBelt = false;
 	ResetCycleCore();
 }
 
@@ -504,6 +507,15 @@ bool ManualReloadController::ShouldShowBeltMagazine() const
 		return true;
 	}
 
+	// Continuous shell loads attach at pouch-grab time; keep relocating through the
+	// short PlayingEject window so the shell does not vanish until pause.
+	if (IsShellByShellReloadWeapon()
+		&& phase == EManualReloadPhase::PlayingEject
+		&& (bMagazineEjected || bMagazineGrabbed))
+	{
+		return true;
+	}
+
 	return bMagazineEjected;
 }
 
@@ -641,6 +653,15 @@ bool ManualReloadController::ShouldSuppressTwoHandAim() const
 		return true;
 	}
 
+	// While shell-by-shell reload is active, off-hand grip is for the pouch —
+	// never treat it as two-hand aim (that eats the first grab press).
+	if (IsShellByShellReloadWeapon()
+		&& bShotgunShellSessionActive
+		&& CanLoadAnotherShell())
+	{
+		return true;
+	}
+
 	bool gripHeld = false;
 	bool gripChanged = false;
 	return ShouldShowBeltMagazine() && GetOffHandNearBelt(gripHeld, gripChanged);
@@ -737,10 +758,27 @@ void ManualReloadController::TryBeginShotgunLoadFromBelt()
 
 	bool gripHeld = false;
 	bool gripChanged = false;
-	if (GetOffHandNearBelt(gripHeld, gripChanged) && gripChanged && gripHeld)
+	const bool nearBelt = GetOffHandNearBelt(gripHeld, gripChanged);
+
+	// Fresh press near the pouch, or moving onto the pouch while already holding
+	// grip (first press often happens just outside the grab radius / as two-hand).
+	const bool grabEdge = gripHeld && nearBelt && (gripChanged || !bWasOffHandNearBelt);
+	bWasOffHandNearBelt = nearBelt;
+
+	if (!grabEdge)
 	{
-		bBeltGripStartedReload = true;
-		BeginChainedShellReload();
+		return;
+	}
+
+	bBeltGripStartedReload = true;
+	BeginChainedShellReload();
+
+	// Keep the shell at the pouch until the pause keyframe; suppress two-hand
+	// immediately so this grip can't be interpreted as aiming.
+	if (phase == EManualReloadPhase::PlayingEject)
+	{
+		bMagazineEjected = true;
+		bSuppressSwapUntilGripRelease = true;
 	}
 }
 
@@ -779,6 +817,69 @@ void ManualReloadController::ApplyAnimPin()
 	SkeletonAnim::PinWeaponFirstPersonAnimation(weaponObject, pinnedAnim, pinnedFrame);
 }
 
+void ManualReloadController::EnterPausedAtEject(WeaponDynamicObject* weaponObject, bool bAdvanceReloadRemaining)
+{
+	if (!weaponObject || phase == EManualReloadPhase::PausedAtEject)
+	{
+		return;
+	}
+
+	const int pauseTicks = std::max(0, ReloadSettings(cachedWeaponType).PauseTicks);
+	const int reloadAnimIndex = GetActiveReloadAnimIndex();
+
+	pausedReloadAnimIndex = reloadAnimIndex >= 0
+		? static_cast<uint16_t>(reloadAnimIndex)
+		: Helpers::GetFirstPersonBaseAnimId();
+	pausedReloadAnimFrame = static_cast<uint16_t>(pauseTicks);
+
+	uint16_t remaining = weaponObject->weaponData[0].reloadRemaining;
+	if (initialReloadRemaining == 0)
+	{
+		initialReloadRemaining = remaining;
+	}
+
+	if (bAdvanceReloadRemaining && pauseTicks > 0 && remaining > static_cast<uint16_t>(pauseTicks))
+	{
+		remaining = static_cast<uint16_t>(remaining - pauseTicks);
+		weaponObject->weaponData[0].reloadRemaining = remaining;
+	}
+
+	frozenReloadRemaining = remaining;
+	phase = EManualReloadPhase::PausedAtEject;
+	bMagazineEjected = true;
+	ResetBonePinState();
+
+	if (bBeltGripStartedReload)
+	{
+		bBeltGripStartedReload = false;
+		bool gripChanged = false;
+		const bool gripHeld = G().GetVR()->GetBoolInput(input.GetTwoHandGripInput(), gripChanged);
+		if (gripHeld)
+		{
+			bMagazineGrabbed = true;
+			bSuppressSwapUntilGripRelease = true;
+		}
+		else
+		{
+			// Released during eject — shell stays on the pouch for a normal grab.
+			bMagazineGrabbed = false;
+		}
+	}
+
+	const Weapon& weapon = weaponObject->weaponData[0];
+	Logger::log << "[ManualReload] magazine ejected"
+		<< " weapon=" << WeaponTypeName(cachedWeaponType)
+		<< " (" << static_cast<int>(cachedWeaponType) << ")"
+		<< " pauseTicks=" << pauseTicks
+		<< " reloadRemaining=" << frozenReloadRemaining
+		<< " ammo=" << weapon.ammo
+		<< " initialRemaining=" << initialReloadRemaining
+		<< " advanced=" << (bAdvanceReloadRemaining ? "true" : "false")
+		<< std::endl;
+	PauseSounds();
+	ApplyAnimPin();
+}
+
 void ManualReloadController::UpdateReloadAnimationPause()
 {
 	if (phase != EManualReloadPhase::PlayingEject
@@ -813,41 +914,10 @@ void ManualReloadController::UpdateReloadAnimationPause()
 		}
 
 		const int pauseTicks = ReloadSettings(cachedWeaponType).PauseTicks;
-		const int reloadAnimIndex = GetActiveReloadAnimIndex();
 
 		if (ShouldPauseManualReload(initialReloadRemaining, weaponObject->weaponData[0].reloadRemaining, pauseTicks))
 		{
-			pausedReloadAnimIndex = reloadAnimIndex >= 0
-				? static_cast<uint16_t>(reloadAnimIndex)
-				: Helpers::GetFirstPersonBaseAnimId();
-			pausedReloadAnimFrame = static_cast<uint16_t>(pauseTicks);
-			frozenReloadRemaining = weaponObject->weaponData[0].reloadRemaining;
-			phase = EManualReloadPhase::PausedAtEject;
-			bMagazineEjected = true;
-			ResetBonePinState();
-
-			if (bBeltGripStartedReload)
-			{
-				bBeltGripStartedReload = false;
-				bool gripHeld = false;
-				bool gripChanged = false;
-				if (GetOffHandNearBelt(gripHeld, gripChanged) && gripHeld)
-				{
-					bMagazineGrabbed = true;
-					bSuppressSwapUntilGripRelease = true;
-				}
-			}
-
-			const Weapon& weapon = weaponObject->weaponData[0];
-			Logger::log << "[ManualReload] magazine ejected"
-				<< " weapon=" << WeaponTypeName(cachedWeaponType)
-				<< " (" << static_cast<int>(cachedWeaponType) << ")"
-				<< " pauseTicks=" << pauseTicks
-				<< " reloadRemaining=" << frozenReloadRemaining
-				<< " ammo=" << weapon.ammo
-				<< " initialRemaining=" << initialReloadRemaining
-				<< std::endl;
-			PauseSounds();
+			EnterPausedAtEject(weaponObject, false);
 		}
 	}
 	else if (phase == EManualReloadPhase::PausedAtEject)
@@ -1011,8 +1081,10 @@ void ManualReloadController::HandleManualMagazineGrabInsert()
 	{
 		ResumeManualReloadAnimation();
 	}
-	else if (!gripHeld)
+	else if (gripChanged && !gripHeld)
 	{
+		// Drop on release edge (same for mags and shells). Level checks flicker
+		// and can clear a grab on the same frame it was acquired.
 		bMagazineGrabbed = false;
 	}
 }
@@ -1129,9 +1201,14 @@ void ManualReloadController::UpdateInsertSocketFromGun(const Transform* outBoneT
 		reloadStartMagLocalOffset);
 }
 
-void ManualReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up)
+void ManualReloadController::UpdateGripFromAnimPose(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up)
 {
-	if (bHasCapturedGrip || boneReplay.GetSampleCount() <= 0)
+	if (!bMagazineGrabbed
+		|| bHasCapturedGrip
+		|| !pos
+		|| !facing
+		|| !up
+		|| phase != EManualReloadPhase::PausedAtEject)
 	{
 		return;
 	}
@@ -1143,28 +1220,50 @@ void ManualReloadController::CaptureGripFromResumePose(HaloID& id, Vector3* pos,
 		return;
 	}
 
-	const int pauseTicks = ReloadSettings(cachedWeaponType).PauseTicks;
-	const int resumeTicks = ReloadSettings(cachedWeaponType).ResumeTicks;
-	const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
-	const float skipSeconds = static_cast<float>(skipTicks) / 30.0f;
+	const TransformQuat* sourceQuats = nullptr;
+	TransformQuat poseQuats[SkeletonAnim::kMaxBones]{};
 
-	const int replayIndex = boneReplay.FindSampleIndexAtOrAfter(skipSeconds);
-	if (replayIndex < 0)
+	if (IsShellByShellReloadWeapon())
 	{
-		return;
+		// Shotgun: hold pose is the pinned pause keyframe.
+		if (!bHasLastAnimQuats)
+		{
+			return;
+		}
+
+		sourceQuats = lastAnimQuats;
+	}
+	else
+	{
+		// Magazines: hold pose is the resume keyframe so the mag matches insert.
+		// While pinned we keep recording; the sample at skipSeconds is the pose
+		// the finish anim expects when playback continues.
+		if (boneReplay.GetSampleCount() <= 0)
+		{
+			return;
+		}
+
+		const int pauseTicks = ReloadSettings(cachedWeaponType).PauseTicks;
+		const int resumeTicks = ReloadSettings(cachedWeaponType).ResumeTicks;
+		const int skipTicks = resumeTicks > pauseTicks ? resumeTicks - pauseTicks : 0;
+		const float skipSeconds = static_cast<float>(skipTicks) / 30.0f;
+		const int replayIndex = boneReplay.FindSampleIndexAtOrAfter(skipSeconds);
+		if (replayIndex < 0)
+		{
+			return;
+		}
+
+		sourceQuats = boneReplay.GetSampleQuats(replayIndex);
+		if (!sourceQuats)
+		{
+			return;
+		}
 	}
 
-	const TransformQuat* sampleQuats = boneReplay.GetSampleQuats(replayIndex);
-	if (!sampleQuats)
-	{
-		return;
-	}
-
-	TransformQuat resumeQuats[SkeletonAnim::kMaxBones]{};
-	memcpy(resumeQuats, sampleQuats, sizeof(resumeQuats));
+	memcpy(poseQuats, sourceQuats, sizeof(poseQuats));
 
 	Transform animPoseTransforms[SkeletonAnim::kMaxBones]{};
-	SkeletonAnim::EvaluatePose(id, pos, facing, up, resumeQuats, animPoseTransforms);
+	SkeletonAnim::EvaluatePose(id, pos, facing, up, poseQuats, animPoseTransforms);
 
 	gripFromWristLocal = SkeletonAnim::CaptureChildInParentSpace(
 		animPoseTransforms[wristIndex],
@@ -1188,14 +1287,19 @@ bool ManualReloadController::GetGrabbedMagazineTargetMatrix(const Transform* out
 
 Matrix4 ManualReloadController::GetDetachedMagazineOrientation(const Transform* outBoneTransforms) const
 {
-	if (bMagazineGrabbed)
+	if (bMagazineGrabbed && bHasCapturedGrip)
 	{
 		Matrix4 targetMatrix;
 		if (GetGrabbedMagazineTargetMatrix(outBoneTransforms, targetMatrix))
 		{
 			return targetMatrix;
 		}
+	}
 
+	// Magazines follow the controller until the resume-pose grip is ready.
+	// Shells stay on the pouch until the pause-pose grip is captured.
+	if (bMagazineGrabbed && !IsShellByShellReloadWeapon())
+	{
 		const ControllerRole offHand = G().bLeftHanded ? ControllerRole::Right : ControllerRole::Left;
 		return SkeletonAnim::GetRotationMatrix(G().GetVR()->GetControllerTransform(offHand, true));
 	}
@@ -1227,14 +1331,15 @@ void ManualReloadController::UpdateMagazinePlacement(const HaloID& id, Transform
 	if (bMagazineGrabbed)
 	{
 		Matrix4 targetMatrix;
-		if (GetGrabbedMagazineTargetMatrix(outBoneTransforms, targetMatrix))
+		if (bHasCapturedGrip && GetGrabbedMagazineTargetMatrix(outBoneTransforms, targetMatrix))
 		{
 			targetPos = targetMatrix * Vector3(0.0f, 0.0f, 0.0f);
 		}
-		else
+		else if (!IsShellByShellReloadWeapon())
 		{
 			targetPos = GetOffHandWorldPosition() + GetMagazineGripWorldOffset();
 		}
+		// else: shotgun shell stays at pouch until pause grip is captured
 	}
 
 	const int rootIndex = GetMagazineRootBoneIndex();
@@ -1289,9 +1394,31 @@ void ManualReloadController::ApplyBonePin(const HaloID& id, TransformQuat* boneT
 	lastBonePinPhase = phaseInt;
 }
 
+void ManualReloadController::ForceMagazineBoneVisible(TransformQuat* boneTransforms) const
+{
+	if (!boneTransforms || !ShouldShowBeltMagazine())
+	{
+		return;
+	}
+
+	for (int i = 0; i < SkeletonAnim::kMaxBones; i++)
+	{
+		if (magazineHideBones[i])
+		{
+			boneTransforms[i].scale = 1.0f;
+		}
+	}
+}
+
 void ManualReloadController::PreSkeleton(const HaloID& id, TransformQuat* boneTransforms)
 {
 	ApplyBonePin(id, boneTransforms);
+	if (IsLocalViewModel(id) && boneTransforms)
+	{
+		memcpy(lastAnimQuats, boneTransforms, sizeof(lastAnimQuats));
+		bHasLastAnimQuats = true;
+		ForceMagazineBoneVisible(boneTransforms);
+	}
 }
 
 void ManualReloadController::PostSkeleton(HaloID& id, Vector3* pos, Vector3* facing, Vector3* up, Transform* outBoneTransforms)
@@ -1302,8 +1429,9 @@ void ManualReloadController::PostSkeleton(HaloID& id, Vector3* pos, Vector3* fac
 	}
 	else if (phase == EManualReloadPhase::PausedAtEject)
 	{
+		CaptureReloadStartInsertSocket(outBoneTransforms);
 		UpdateInsertSocketFromGun(outBoneTransforms);
-		CaptureGripFromResumePose(id, pos, facing, up);
+		UpdateGripFromAnimPose(id, pos, facing, up);
 	}
 
 	UpdateMagazinePlacement(id, outBoneTransforms);
